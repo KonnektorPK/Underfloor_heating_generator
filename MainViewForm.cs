@@ -20,14 +20,17 @@ namespace Underfloor_heating_generator
     {
         private PipeTypeService pipeTypeService;
         private UserFormParametrs userParametrs;
+        private DwgConverter dwgConverter;
 
         public MainViewForm(
             PipeTypeService _pipeTypeService, 
-            UserFormParametrs _userParametrs)
+            UserFormParametrs _userParametrs,
+            DwgConverter _dwgConverter)
         {
             InitializeComponent();
             pipeTypeService = _pipeTypeService;
             userParametrs = _userParametrs;
+            dwgConverter = _dwgConverter;
         }
 
         private void MainViewForm_Load(object sender, EventArgs e)
@@ -112,9 +115,15 @@ namespace Underfloor_heating_generator
                     MessageBox.Show($"Ошибка: {ex.Message}");
                 }
 
-                //IList<XYZ> points = new List<XYZ>() { new XYZ(0, 0, 0), new XYZ(0, 250, 0), new XYZ(0, 500, 0), new XYZ(250, 500, 0), new XYZ(500, 500, 0), new XYZ(500, 1000, 0) };
 
-                IList<XYZ> points = new List<XYZ>() { new XYZ(0, 0, 0), new XYZ(0, 250, 0), new XYZ(250, 500, 0), new XYZ(1000, 500, 0)};
+                ImportInstance instance = dwgConverter.PickDwgFile();
+                IList<XYZ> points = dwgConverter.GetVerticesFromDwg(instance);
+                //points = points.Select(p => new XYZ(p.X * 100, p.Y * 100, p.Z)).ToList();
+
+                //MessageBox.Show(points[0].ToString());
+
+
+                //IList<XYZ> points = new List<XYZ>() { new XYZ(0, 0, 0), new XYZ(10, 250, 0), new XYZ(20, 500, 0)};
                 pipeTypeService.DrawPipes(points, userParametrs.PipeDiametr, userParametrs.PipeLayingHeight, userParametrs.PipeType.Id, userParametrs.GetLevelId(), userParametrs.SystemTypePipe.Id);
             }
             else

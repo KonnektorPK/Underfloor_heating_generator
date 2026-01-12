@@ -33,10 +33,12 @@ namespace Underfloor_heating_generator
             UIDocument uidoc = commandData.Application.ActiveUIDocument;
 
             MainViewForm form = new MainViewForm(
-                new PipeTypeService(uidoc.Document), 
-                new UserFormParametrs(uidoc.Document));
+                new PipeTypeService(uidoc.Document),
+                new UserFormParametrs(uidoc.Document),
+                new DwgConverter(uidoc));
 
             form.ShowDialog();
+            //form.Show();
 
             return Result.Succeeded;
         }
@@ -107,11 +109,10 @@ public class PipeTypeService
 
                 for (int i = 0; i < points.Count - 1; i++)
                 {
+                    
                     int count = CountMissingPoints(points, i); ;
-
-                    i += count;
-
                     MessageBox.Show(count.ToString());
+                    i += count;
 
                     Pipe nextPipe = Pipe.Create(doc, systemTypeId, pipeTypeId, levelId,
                         points[i - count], points[i + 1]);
@@ -173,7 +174,7 @@ public class PipeTypeService
         int result = 0;
         for (int i = count; i < points.Count - 2; i++)
         {
-            if(ArePointsOnSameLine(points[i], points[i + 1], points[i + 2]))
+            if (ArePointsOnSameLine(points[i], points[i + 1], points[i + 2]))
             {
                 result++;
             }
@@ -196,51 +197,61 @@ public class PipeTypeService
         double dot = Math.Abs(normAB.DotProduct(normBC));
         return Math.Abs(dot - 1.0) <= tolerance;
     }
+}
 
-    //public bool DrawPipes(
-    //    IList<XYZ> points, //массив точек
-    //    double pipeDiameter, //внешний диаметр трубы
-    //    double levelOffset, //отступ от уровня для теплого пола
-    //    ElementId pipeTypeId, //тип трубы
-    //    ElementId levelId, //уровень
-    //    ElementId systemTypeId, //тип системы трубы
-    //    ElementId fittingTypeId = null) //тип соединительной детали (опционально)
-    //{
-    //    if (points == null || points.Count < 2) return false;
-    //    Pipe previousPipe = null;
+public class DwgConverter
+{
+    private readonly UIDocument uiDoc;
 
-    //    using (Transaction transactionPipes = new Transaction(doc, "Добавления труб теплого пола"))
-    //    {
-    //        transactionPipes.Start();
-    //        try
-    //        {
-    //            for (int i = 0; i < points.Count - 1; i++)
-    //            {
-    //                XYZ startConnector = points[i] / 304.8;
-    //                XYZ endConnector = points[i + 1] / 304.8;
+    public DwgConverter(UIDocument _uiDoc)
+    {
+        uiDoc = _uiDoc;
+    }
 
-    //                Pipe newPipe = Pipe.Create(doc, systemTypeId, pipeTypeId, levelId, startConnector, endConnector);
+    public IList<XYZ> GetVerticesFromDwg(ImportInstance dwg)
+    {
+        IList<XYZ> result = new List<XYZ>();
 
-    //                Parameter diameterParam = newPipe.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM);
-    //                diameterParam.Set(pipeDiameter / 304.8); //переводим из футов в мм
+        GeometryElement geometryElement = dwg.get_Geometry(new Options());
 
-    //                previousPipe = newPipe;
-    //            }
-    //            transactionPipes.Commit();
-    //        }
-    //        catch (Exception ex)
-    //        {
-    //            transactionPipes.RollBack();
-    //            MessageBox.Show($"Ошибка транзакции: {ex.Message}",
-    //                "Обнаружена ошибка",
-    //                MessageBoxButtons.OK,
-    //                MessageBoxIcon.Error);
-    //            return false;
-    //        }
-    //    }
+        GeometryInstance geometryInstance = null;
+        foreach (GeometryObject obj in geometryElement)
+        {
+            if (obj is GeometryInstance instance)
+            {
+                geometryInstance = instance;
+                break;
+            }
+        }
 
-    //    return true;
-    //}
+        foreach (var line in geometryInstance.GetInstanceGeometry())
+        {
+            if (line is NurbSpline spline)
+            {
+                result = result.Concat(spline.Tessellate()).ToList();
+            }
+        }
+        return null;
+    }
+
+    public ImportInstance PickDwgFile()
+    {
+        //Reference reference = uiDoc.Selection.PickObject(ObjectType.Element, "Выберете DWG файл на плане");
+
+        //Element dwg = uiDoc.Document.GetElement(reference);
+        FilteredElementCollector collector = new FilteredElementCollector(uiDoc.Document);
+        IList<Element> importInstances = collector
+            .OfClass(typeof(ImportInstance))
+            .WhereElementIsNotElementType()
+            .ToElements();
+
+        if (importInstances[0] is ImportInstance dwgInstance)
+        {
+            return dwgInstance;
+        }
+
+        return null;
+    }
 }
 
 public class UserFormParametrs
