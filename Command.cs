@@ -132,8 +132,6 @@ public class PipeTypeService
                         {
                             previousConnector.ConnectTo(startConnector2);
                         }
-
-                        //MessageBox.Show(ArePointsOnSameLine(points[i - 1], points[i], points[i + 1]).ToString());
                     }
 
                     previousPipe = nextPipe;
