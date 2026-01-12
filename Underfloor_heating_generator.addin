@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+	<AddIn Type="Application">
+
+		<!-- Базовая информация о приложении -->
+		<Name>Warm Floor Generator</Name>
+		<Assembly>Underfloor_heating_generator.dll</Assembly>
+		<AddInId>087BC1BC-474A-4C79-B455-926D91B6EE10</AddInId>
+		<FullClassName>Underfloor_heating_generator.Command</FullClassName>
+
+		<!-- Информация для отображения в Revit -->
+		<Text>Генератор теплых полов</Text>
+		<Description>
+			Плагин для автоматического создания систем теплых полов в Revit.
+			Включает расчёт, размещение труб и создание документации.
+		</Description>
+		<VisibilityMode>AlwaysVisible</VisibilityMode>
+
+		<!-- Информация о разработчике -->
+		<VendorId>com.typepad.thebuildingcoder</VendorId>
+		<VendorDescription>
+			Разработчик: neu3no
+		</VendorDescription>
+
+		<!-- Настройки совместимости -->
+		<MaximalRevitVersion>2025</MaximalRevitVersion>
+
+	</AddIn>
+
+</RevitAddIns>
