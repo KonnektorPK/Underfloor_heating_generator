@@ -94,6 +94,7 @@ public class PipeTypeService
     ElementId fittingTypeId = null) //тип соединительной детали
     {
         if (points == null || points.Count < 2) return false;
+        XYZ intermediatePoint = null;
 
         using (Transaction transaction = new Transaction(doc, "Добавления труб с фитингами"))
         {
@@ -101,27 +102,47 @@ public class PipeTypeService
             try
             {
                 double levelFloorHight = ((doc.GetElement(levelId) as Level).Elevation + levelOffset / 304.8);
+                double minLength = 0.0254;
 
-                points = points.Select(p => p / 304.8 + new XYZ(0, 0, levelFloorHight)).ToList();
+                //points = points.Select(p => p / 304.8 + new XYZ(0, 0, levelFloorHight)).ToList();
 
                 Pipe previousPipe = null;
                 Connector previousConnector = null;
 
                 for (int i = 0; i < points.Count - 1; i++)
                 {
-                    
-                    int count = CountMissingPoints(points, i); ;
-                    MessageBox.Show(count.ToString());
+                    int count = CountMissingPoints(points, i);
+                    XYZ startPoint = points[i];
+
+                    if (intermediatePoint == null)
+                    {
+                        startPoint = points[i];
+                    }
+                    else
+                    {
+                        startPoint = intermediatePoint;
+                        intermediatePoint = null;
+                    }
+
                     i += count;
+                    XYZ endPoint = points[i + 1];
+
+                    if (startPoint.DistanceTo(endPoint) < minLength)
+                    {
+                        intermediatePoint = startPoint;
+                        continue;
+                    }
+
+                    //MessageBox.Show(startPoint.DistanceTo(endPoint).ToString());
 
                     Pipe nextPipe = Pipe.Create(doc, systemTypeId, pipeTypeId, levelId,
-                        points[i - count], points[i + 1]);
+                        startPoint, endPoint);
 
                     Parameter diameterParam = nextPipe.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM);
                     diameterParam.Set(pipeDiameter / 304.8);
 
                     ConnectorSet connectorSet2 = nextPipe.ConnectorManager.Connectors;
-                    Connector startConnector2 = ExtractPipeConnector(connectorSet2, points[i - count]);
+                    Connector startConnector2 = ExtractPipeConnector(connectorSet2, startPoint);
 
                     if (previousConnector != null && startConnector2 != null)
                     {
@@ -137,7 +158,7 @@ public class PipeTypeService
 
                     previousPipe = nextPipe;
 
-                    previousConnector = ExtractPipeConnector(connectorSet2, points[i + 1]);
+                    previousConnector = ExtractPipeConnector(connectorSet2, endPoint);
                 }
 
                 transaction.Commit();
@@ -210,8 +231,8 @@ public class DwgConverter
 
     public IList<XYZ> GetVerticesFromDwg(ImportInstance dwg)
     {
-        IList<XYZ> result = new List<XYZ>();
 
+        IList<XYZ> result = new List<XYZ>();
         GeometryElement geometryElement = dwg.get_Geometry(new Options());
 
         GeometryInstance geometryInstance = null;
@@ -228,10 +249,12 @@ public class DwgConverter
         {
             if (line is NurbSpline spline)
             {
-                result = result.Concat(spline.Tessellate()).ToList();
+                //result = result.Concat(spline.Tessellate()).ToList();
+                IList<XYZ> points = spline.CtrlPoints;
+                result = result.Concat(points).ToList();
             }
         }
-        return null;
+        return result;
     }
 
     public ImportInstance PickDwgFile()

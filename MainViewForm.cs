@@ -118,9 +118,8 @@ namespace Underfloor_heating_generator
 
                 ImportInstance instance = dwgConverter.PickDwgFile();
                 IList<XYZ> points = dwgConverter.GetVerticesFromDwg(instance);
+                MessageBox.Show(points.Count.ToString());
                 //points = points.Select(p => new XYZ(p.X * 100, p.Y * 100, p.Z)).ToList();
-
-                //MessageBox.Show(points[0].ToString());
 
 
                 //IList<XYZ> points = new List<XYZ>() { new XYZ(0, 0, 0), new XYZ(10, 250, 0), new XYZ(20, 500, 0)};
