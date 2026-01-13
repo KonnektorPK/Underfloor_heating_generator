@@ -31,6 +31,9 @@ namespace Underfloor_heating_generator
             pipeTypeService = _pipeTypeService;
             userParametrs = _userParametrs;
             dwgConverter = _dwgConverter;
+
+            this.FormBorderStyle = FormBorderStyle.FixedSingle;
+            this.MaximizeBox = false;
         }
 
         private void MainViewForm_Load(object sender, EventArgs e)
@@ -115,10 +118,9 @@ namespace Underfloor_heating_generator
                     MessageBox.Show($"Ошибка: {ex.Message}");
                 }
 
-
                 ImportInstance instance = dwgConverter.PickDwgFile();
                 IList<XYZ> points = dwgConverter.GetVerticesFromDwg(instance);
-                MessageBox.Show(points.Count.ToString());
+                
                 //points = points.Select(p => new XYZ(p.X * 100, p.Y * 100, p.Z)).ToList();
 
 
@@ -177,7 +179,6 @@ namespace Underfloor_heating_generator
             {
                 PipeSelection.Items.Add(element.Name);
             }
-            //PipeSelection.SelectedItem = "123";
         }
 
         private void SystemTypePipe_LoadInCombobox()

@@ -57,6 +57,12 @@
   <ItemGroup>
     <Compile Include="App.cs" />
     <Compile Include="Command.cs" />
+    <Compile Include="FormDWGtoUnderfloor.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormDWGtoUnderfloor.Designer.cs">
+      <DependentUpon>FormDWGtoUnderfloor.cs</DependentUpon>
+    </Compile>
     <Compile Include="MainViewForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -69,6 +75,9 @@
     <None Include="Underfloor_heating_generator.addin" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="FormDWGtoUnderfloor.resx">
+      <DependentUpon>FormDWGtoUnderfloor.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="MainViewForm.resx">
       <DependentUpon>MainViewForm.cs</DependentUpon>
       <SubType>Designer</SubType>

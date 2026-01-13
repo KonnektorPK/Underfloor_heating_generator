@@ -105,6 +105,7 @@ public class PipeTypeService
                 double minLength = 0.0254;
 
                 //points = points.Select(p => p / 304.8 + new XYZ(0, 0, levelFloorHight)).ToList();
+                points = points.Select(p => p + new XYZ(0, 0, levelFloorHight)).ToList();
 
                 Pipe previousPipe = null;
                 Connector previousConnector = null;
@@ -132,8 +133,6 @@ public class PipeTypeService
                         intermediatePoint = startPoint;
                         continue;
                     }
-
-                    //MessageBox.Show(startPoint.DistanceTo(endPoint).ToString());
 
                     Pipe nextPipe = Pipe.Create(doc, systemTypeId, pipeTypeId, levelId,
                         startPoint, endPoint);

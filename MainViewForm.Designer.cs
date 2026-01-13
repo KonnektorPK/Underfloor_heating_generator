@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainViewForm));
             this.PipeSelection = new System.Windows.Forms.ComboBox();
             this.label1 = new System.Windows.Forms.Label();
             this.PipeDiametr = new System.Windows.Forms.ComboBox();
@@ -336,8 +337,9 @@
             this.Controls.Add(this.PipeDiametr);
             this.Controls.Add(this.label1);
             this.Controls.Add(this.PipeSelection);
+            this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "MainViewForm";
-            this.Text = "Ввод данных ТП";
+            this.Text = "Ввод данных теплого пола";
             this.Load += new System.EventHandler(this.MainViewForm_Load);
             this.ResumeLayout(false);
             this.PerformLayout();
