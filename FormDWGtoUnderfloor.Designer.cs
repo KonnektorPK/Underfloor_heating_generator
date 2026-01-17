@@ -50,11 +50,11 @@
             // label11
             // 
             this.label11.AutoSize = true;
-            this.label11.Location = new System.Drawing.Point(165, 87);
+            this.label11.Location = new System.Drawing.Point(130, 88);
             this.label11.Name = "label11";
-            this.label11.Size = new System.Drawing.Size(165, 20);
+            this.label11.Size = new System.Drawing.Size(234, 20);
             this.label11.TabIndex = 34;
-            this.label11.Text = "Выберете тип трубы";
+            this.label11.Text = "Выберете тип системы трубы";
             // 
             // SystemTypePipe
             // 
@@ -68,19 +68,20 @@
             // 
             // CreateWarmFloor
             // 
-            this.CreateWarmFloor.Location = new System.Drawing.Point(11, 422);
+            this.CreateWarmFloor.Location = new System.Drawing.Point(11, 353);
             this.CreateWarmFloor.Name = "CreateWarmFloor";
             this.CreateWarmFloor.Size = new System.Drawing.Size(460, 29);
             this.CreateWarmFloor.TabIndex = 32;
             this.CreateWarmFloor.Text = "Построить теплый пол";
             this.CreateWarmFloor.UseVisualStyleBackColor = true;
+            this.CreateWarmFloor.Click += new System.EventHandler(this.CreateWarmFloor_Click);
             // 
             // SaveChanges
             // 
             this.SaveChanges.AutoSize = true;
             this.SaveChanges.Checked = true;
             this.SaveChanges.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.SaveChanges.Location = new System.Drawing.Point(11, 388);
+            this.SaveChanges.Location = new System.Drawing.Point(11, 319);
             this.SaveChanges.Name = "SaveChanges";
             this.SaveChanges.Size = new System.Drawing.Size(388, 24);
             this.SaveChanges.TabIndex = 31;
@@ -90,7 +91,7 @@
             // label9
             // 
             this.label9.AutoSize = true;
-            this.label9.Location = new System.Drawing.Point(440, 347);
+            this.label9.Location = new System.Drawing.Point(440, 278);
             this.label9.Name = "label9";
             this.label9.Size = new System.Drawing.Size(31, 20);
             this.label9.TabIndex = 30;
@@ -99,7 +100,7 @@
             // label10
             // 
             this.label10.AutoSize = true;
-            this.label10.Location = new System.Drawing.Point(207, 347);
+            this.label10.Location = new System.Drawing.Point(207, 278);
             this.label10.Name = "label10";
             this.label10.Size = new System.Drawing.Size(31, 20);
             this.label10.TabIndex = 29;
@@ -108,7 +109,7 @@
             // label3
             // 
             this.label3.AutoSize = true;
-            this.label3.Location = new System.Drawing.Point(240, 307);
+            this.label3.Location = new System.Drawing.Point(240, 238);
             this.label3.Name = "label3";
             this.label3.Size = new System.Drawing.Size(207, 20);
             this.label3.TabIndex = 28;
@@ -127,7 +128,7 @@
             "-100",
             "-110",
             "-125"});
-            this.PipeLayingHeight.Location = new System.Drawing.Point(244, 339);
+            this.PipeLayingHeight.Location = new System.Drawing.Point(244, 270);
             this.PipeLayingHeight.Name = "PipeLayingHeight";
             this.PipeLayingHeight.Size = new System.Drawing.Size(190, 28);
             this.PipeLayingHeight.TabIndex = 27;
@@ -135,7 +136,7 @@
             // label2
             // 
             this.label2.AutoSize = true;
-            this.label2.Location = new System.Drawing.Point(11, 307);
+            this.label2.Location = new System.Drawing.Point(11, 238);
             this.label2.Name = "label2";
             this.label2.Size = new System.Drawing.Size(190, 20);
             this.label2.TabIndex = 26;
@@ -149,7 +150,7 @@
             "20",
             "25",
             "32"});
-            this.PipeDiametr.Location = new System.Drawing.Point(11, 339);
+            this.PipeDiametr.Location = new System.Drawing.Point(11, 270);
             this.PipeDiametr.Name = "PipeDiametr";
             this.PipeDiametr.Size = new System.Drawing.Size(190, 28);
             this.PipeDiametr.TabIndex = 25;
@@ -157,11 +158,11 @@
             // label1
             // 
             this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(165, 9);
+            this.label1.Location = new System.Drawing.Point(179, 9);
             this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(165, 20);
+            this.label1.Size = new System.Drawing.Size(130, 20);
             this.label1.TabIndex = 24;
-            this.label1.Text = "Выберете тип трубы";
+            this.label1.Text = "Выберете трубу";
             // 
             // PipeSelection
             // 
@@ -176,11 +177,11 @@
             // label4
             // 
             this.label4.AutoSize = true;
-            this.label4.Location = new System.Drawing.Point(13, 166);
+            this.label4.Location = new System.Drawing.Point(105, 164);
             this.label4.Name = "label4";
-            this.label4.Size = new System.Drawing.Size(458, 20);
+            this.label4.Size = new System.Drawing.Size(285, 20);
             this.label4.TabIndex = 36;
-            this.label4.Text = "Выберете чертеж по которому будет строится теплый пол";
+            this.label4.Text = "Выберете чертеж на данном уровне";
             // 
             // SelectDrawingDWG
             // 
@@ -200,6 +201,7 @@
             this.label5.Size = new System.Drawing.Size(216, 20);
             this.label5.TabIndex = 38;
             this.label5.Text = "Выберете слой на чертеже";
+            this.label5.Visible = false;
             // 
             // SelectLayerDWG
             // 
@@ -209,13 +211,14 @@
             this.SelectLayerDWG.Name = "SelectLayerDWG";
             this.SelectLayerDWG.Size = new System.Drawing.Size(460, 28);
             this.SelectLayerDWG.TabIndex = 37;
+            this.SelectLayerDWG.Visible = false;
             this.SelectLayerDWG.SelectedIndexChanged += new System.EventHandler(this.SelectLayerDWG_SelectedIndexChanged);
             // 
             // FormDWGtoUnderfloor
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(9F, 20F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(478, 464);
+            this.ClientSize = new System.Drawing.Size(478, 392);
             this.Controls.Add(this.label5);
             this.Controls.Add(this.SelectLayerDWG);
             this.Controls.Add(this.label4);

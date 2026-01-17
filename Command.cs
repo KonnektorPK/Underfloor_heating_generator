@@ -1,6 +1,7 @@
 ﻿#region Namespaces
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -32,7 +33,12 @@ namespace Underfloor_heating_generator
         {
             UIDocument uidoc = commandData.Application.ActiveUIDocument;
 
-            MainViewForm form = new MainViewForm(
+            //MainViewForm form = new MainViewForm(
+            //    new PipeTypeService(uidoc.Document),
+            //    new UserFormParametrs(uidoc.Document),
+            //    new DwgConverter(uidoc));
+
+            FormDWGtoUnderfloor form = new FormDWGtoUnderfloor(
                 new PipeTypeService(uidoc.Document),
                 new UserFormParametrs(uidoc.Document),
                 new DwgConverter(uidoc));
@@ -222,10 +228,24 @@ public class PipeTypeService
 public class DwgConverter
 {
     private readonly UIDocument uiDoc;
+    private IList<Element> importDWGInstance;
+    FilteredElementCollector collector;
 
     public DwgConverter(UIDocument _uiDoc)
     {
         uiDoc = _uiDoc;
+
+        collector = new FilteredElementCollector(uiDoc.Document);
+        //importDWGInstance = collector
+        //    .OfClass(typeof(ImportInstance))
+        //    .WhereElementIsNotElementType()
+        //    .ToElements();
+
+        //importDWGInstance = collector
+        //    .OfClass(typeof(ImportInstance))
+        //    .WhereElementIsNotElementType()
+        //    .Cast<ImportInstance>()
+        //    .ToList();
     }
 
     public IList<XYZ> GetVerticesFromDwg(ImportInstance dwg)
@@ -248,7 +268,6 @@ public class DwgConverter
         {
             if (line is NurbSpline spline)
             {
-                //result = result.Concat(spline.Tessellate()).ToList();
                 IList<XYZ> points = spline.CtrlPoints;
                 result = result.Concat(points).ToList();
             }
@@ -258,21 +277,24 @@ public class DwgConverter
 
     public ImportInstance PickDwgFile()
     {
-        //Reference reference = uiDoc.Selection.PickObject(ObjectType.Element, "Выберете DWG файл на плане");
+        return this.importDWGInstance[0] as ImportInstance;
+    }
 
-        //Element dwg = uiDoc.Document.GetElement(reference);
-        FilteredElementCollector collector = new FilteredElementCollector(uiDoc.Document);
-        IList<Element> importInstances = collector
+    public ImportInstance GetDWGDrawings(int Index)
+    {
+        return this.importDWGInstance[Index] as ImportInstance;
+    }
+
+    public IList<Element> GetDWGDrawings(ElementId LevelID)
+    {
+        importDWGInstance = collector
             .OfClass(typeof(ImportInstance))
             .WhereElementIsNotElementType()
-            .ToElements();
+            .Cast<Element>()
+            .Where(x => x.LevelId == LevelID)
+            .ToList();
 
-        if (importInstances[0] is ImportInstance dwgInstance)
-        {
-            return dwgInstance;
-        }
-
-        return null;
+        return this.importDWGInstance;
     }
 }
 
