@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Text;
@@ -39,6 +40,12 @@ namespace Underfloor_heating_generator
             LoadComboBox(PipeSelection, true, () => pipeTypeService.GetPipeTypes());
             LoadComboBox(SystemTypePipe, true, () => pipeTypeService.GetSystemTypesPipe());
             LoadComboBox(SelectDrawingDWG, true, () => dwgConverter.GetDWGDrawings(LevelID));
+
+            PipeSelection.SelectedIndex = 1;
+            SystemTypePipe.SelectedIndex = 0;
+            SelectDrawingDWG.SelectedIndex = 0;
+            PipeLayingHeight.SelectedIndex = 0;
+            PipeDiametr.SelectedIndex = 0;
         }
 
         private void LoadComboBox(System.Windows.Forms.ComboBox boxItem, bool allowUserInput, Func<IList<Element>> getElement)
@@ -75,9 +82,22 @@ namespace Underfloor_heating_generator
             double pipeDiametr = Convert.ToDouble(PipeDiametr.Text);
             double pipeHeightLayer = Convert.ToDouble(PipeLayingHeight.Text);
 
-            IList<XYZ> points = dwgConverter.GetVerticesFromDwg(dwg);
+            Stopwatch stopwatch = new Stopwatch();
 
-            pipeTypeService.DrawPipes(points, pipeDiametr, pipeHeightLayer, pipeType.Id, LevelID, pipeSystemType.Id);
+            //stopwatch.Start();
+            IList<IList<XYZ>> points = dwgConverter.GetListVerticesFromDwg(dwg);
+            //stopwatch.Stop();
+
+            //MessageBox.Show($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
+
+            stopwatch.Start();
+            foreach (IList<XYZ> point in points)
+            {
+                pipeTypeService.DrawPipes(point, pipeDiametr, pipeHeightLayer, pipeType.Id, LevelID, pipeSystemType.Id);
+            }
+            stopwatch.Stop(); 
+
+            MessageBox.Show($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
         }
 
         private void PipeSelection_SelectedIndexChanged(object sender, EventArgs e)

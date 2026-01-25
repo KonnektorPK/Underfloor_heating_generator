@@ -43,8 +43,8 @@
             this.PipeSelection = new System.Windows.Forms.ComboBox();
             this.label4 = new System.Windows.Forms.Label();
             this.SelectDrawingDWG = new System.Windows.Forms.ComboBox();
-            this.label5 = new System.Windows.Forms.Label();
             this.SelectLayerDWG = new System.Windows.Forms.ComboBox();
+            this.label5 = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // label11
@@ -193,16 +193,6 @@
             this.SelectDrawingDWG.TabIndex = 35;
             this.SelectDrawingDWG.SelectedIndexChanged += new System.EventHandler(this.SelectDrawingDWG_SelectedIndexChanged);
             // 
-            // label5
-            // 
-            this.label5.AutoSize = true;
-            this.label5.Location = new System.Drawing.Point(138, 238);
-            this.label5.Name = "label5";
-            this.label5.Size = new System.Drawing.Size(216, 20);
-            this.label5.TabIndex = 38;
-            this.label5.Text = "Выберете слой на чертеже";
-            this.label5.Visible = false;
-            // 
             // SelectLayerDWG
             // 
             this.SelectLayerDWG.BackColor = System.Drawing.SystemColors.Window;
@@ -213,6 +203,16 @@
             this.SelectLayerDWG.TabIndex = 37;
             this.SelectLayerDWG.Visible = false;
             this.SelectLayerDWG.SelectedIndexChanged += new System.EventHandler(this.SelectLayerDWG_SelectedIndexChanged);
+            // 
+            // label5
+            // 
+            this.label5.AutoSize = true;
+            this.label5.Location = new System.Drawing.Point(138, 238);
+            this.label5.Name = "label5";
+            this.label5.Size = new System.Drawing.Size(216, 20);
+            this.label5.TabIndex = 38;
+            this.label5.Text = "Выберете слой на чертеже";
+            this.label5.Visible = false;
             // 
             // FormDWGtoUnderfloor
             // 
@@ -259,7 +259,7 @@
         private System.Windows.Forms.ComboBox PipeSelection;
         private System.Windows.Forms.Label label4;
         private System.Windows.Forms.ComboBox SelectDrawingDWG;
-        private System.Windows.Forms.Label label5;
         private System.Windows.Forms.ComboBox SelectLayerDWG;
+        private System.Windows.Forms.Label label5;
     }
 }

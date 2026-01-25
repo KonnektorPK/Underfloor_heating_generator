@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.RightsManagement;
 using System.Windows.Controls;
 using System.Windows.Forms;
 using Autodesk.Revit.ApplicationServices;
@@ -91,13 +92,13 @@ public class PipeTypeService
     }
 
     public bool DrawPipes(
-    IList<XYZ> points, //массив точек
-    double pipeDiameter, //внешний диаметр трубы
-    double levelOffset, //отступ от уровня для теплого пола
-    ElementId pipeTypeId, //тип трубы
-    ElementId levelId, //уровень
-    ElementId systemTypeId, //тип системы трубы
-    ElementId fittingTypeId = null) //тип соединительной детали
+        IList<XYZ> points, //массив точек
+        double pipeDiameter, //внешний диаметр трубы
+        double levelOffset, //отступ от уровня для теплого пола
+        ElementId pipeTypeId, //тип трубы
+        ElementId levelId, //уровень
+        ElementId systemTypeId, //тип системы трубы
+        ElementId fittingTypeId = null) //тип соединительной детали
     {
         if (points == null || points.Count < 2) return false;
         XYZ intermediatePoint = null;
@@ -212,7 +213,7 @@ public class PipeTypeService
         return result;
     }
 
-    public static bool ArePointsOnSameLine(XYZ A, XYZ B, XYZ C, double tolerance = 1e-8)
+    public static bool ArePointsOnSameLine(XYZ A, XYZ B, XYZ C, double tolerance = 0.1)
     {
         XYZ AB = B - A;
         XYZ BC = C - B;
@@ -222,6 +223,14 @@ public class PipeTypeService
 
         double dot = Math.Abs(normAB.DotProduct(normBC));
         return Math.Abs(dot - 1.0) <= tolerance;
+    }
+
+    public static double CosineAngleBetweenLines(Line line1, Line line2)
+    {
+        XYZ dir1 = (line1.GetEndPoint(1) - line1.GetEndPoint(0)).Normalize();
+        XYZ dir2 = (line2.GetEndPoint(1) - line2.GetEndPoint(0)).Normalize();
+
+        return Math.Abs(dir1.DotProduct(dir2));
     }
 }
 
@@ -246,6 +255,67 @@ public class DwgConverter
         //    .WhereElementIsNotElementType()
         //    .Cast<ImportInstance>()
         //    .ToList();
+    }
+
+    public IList<IList<XYZ>> GetListVerticesFromDwg(ImportInstance dwg)
+    {
+        double tolerance = 0.01;
+        IList<IList<XYZ>> result = new List<IList<XYZ>>();
+        IList<XYZ> currentPolylinePoints = new List<XYZ>();
+
+        GeometryElement geometryElement = dwg.get_Geometry(new Options());
+
+        GeometryInstance geometryInstance = null;
+        foreach (GeometryObject obj in geometryElement)
+        {
+            if (obj is GeometryInstance instance)
+            {
+                geometryInstance = instance;
+                break;
+            }
+        }
+
+        if (geometryInstance == null) return null;
+
+        XYZ lastPoint = null;
+
+        foreach (GeometryObject line in geometryInstance.GetInstanceGeometry())
+        {
+            if (line is NurbSpline spline)
+            {
+                IList<XYZ> points = spline.CtrlPoints;
+
+                if (points.Count == 0) continue;
+
+                XYZ firstPoint = points.First();
+
+                if (lastPoint == null)
+                {
+                    currentPolylinePoints = new List<XYZ>(points);
+                }
+                else if (firstPoint.DistanceTo(lastPoint) <= tolerance)
+                {
+                    currentPolylinePoints = currentPolylinePoints.Concat(points.Skip(1)).ToList();
+                }
+                else
+                {
+                    if (currentPolylinePoints.Count > 1)
+                    {
+                        result.Add(new List<XYZ>(currentPolylinePoints));
+                    }
+                    currentPolylinePoints = new List<XYZ>(points);
+                }
+
+                lastPoint = points.Last();
+            }
+        }
+
+        if (currentPolylinePoints.Count > 1)
+        {
+            result.Add(new List<XYZ>(currentPolylinePoints));
+        }
+
+        return result;
     }
 
     public IList<XYZ> GetVerticesFromDwg(ImportInstance dwg)

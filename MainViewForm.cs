@@ -118,14 +118,17 @@ namespace Underfloor_heating_generator
                     MessageBox.Show($"Ошибка: {ex.Message}");
                 }
 
-                ImportInstance instance = dwgConverter.PickDwgFile();
-                IList<XYZ> points = dwgConverter.GetVerticesFromDwg(instance);
+                //ImportInstance instance = dwgConverter.PickDwgFile();
+                //IList<IList<XYZ>> points = dwgConverter.GetVerticesFromDwg(instance);
                 
-                //points = points.Select(p => new XYZ(p.X * 100, p.Y * 100, p.Z)).ToList();
+                ////points = points.Select(p => new XYZ(p.X * 100, p.Y * 100, p.Z)).ToList();
 
 
-                //IList<XYZ> points = new List<XYZ>() { new XYZ(0, 0, 0), new XYZ(10, 250, 0), new XYZ(20, 500, 0)};
-                pipeTypeService.DrawPipes(points, userParametrs.PipeDiametr, userParametrs.PipeLayingHeight, userParametrs.PipeType.Id, userParametrs.GetLevelId(), userParametrs.SystemTypePipe.Id);
+                ////IList<XYZ> points = new List<XYZ>() { new XYZ(0, 0, 0), new XYZ(10, 250, 0), new XYZ(20, 500, 0)};
+                //foreach(IList<XYZ> point in points)
+                //{
+                //    pipeTypeService.DrawPipes(point, userParametrs.PipeDiametr, userParametrs.PipeLayingHeight, userParametrs.PipeType.Id, userParametrs.GetLevelId(), userParametrs.SystemTypePipe.Id);
+                //}
             }
             else
             {
