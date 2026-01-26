@@ -5,10 +5,12 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.RightsManagement;
 using System.Windows.Controls;
 using System.Windows.Forms;
+using System.Windows.Media.Media3D;
 using Autodesk.Revit.ApplicationServices;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
@@ -108,7 +110,8 @@ public class PipeTypeService
             transaction.Start();
             try
             {
-                double levelFloorHight = ((doc.GetElement(levelId) as Level).Elevation + levelOffset / 304.8);
+                //double levelFloorHight = ((doc.GetElement(levelId) as Level).Elevation + levelOffset / 304.8);
+                double levelFloorHight = (levelOffset / 304.8);
                 double minLength = 0.0254;
 
                 //points = points.Select(p => p / 304.8 + new XYZ(0, 0, levelFloorHight)).ToList();
@@ -116,11 +119,12 @@ public class PipeTypeService
 
                 Pipe previousPipe = null;
                 Connector previousConnector = null;
+                XYZ startPoint = null;
 
                 for (int i = 0; i < points.Count - 1; i++)
                 {
-                    int count = CountMissingPoints(points, i);
-                    XYZ startPoint = points[i];
+                    int index = CountMissingPoints(points, i);
+                    //MessageBox.Show(count.ToString());
 
                     if (intermediatePoint == null)
                     {
@@ -132,12 +136,11 @@ public class PipeTypeService
                         intermediatePoint = null;
                     }
 
-                    i += count;
-                    XYZ endPoint = points[i + 1];
+                    XYZ endPoint = points[index];
 
-                    if (startPoint.DistanceTo(endPoint) < minLength)
+                    if (startPoint.DistanceTo(endPoint) <= minLength)
                     {
-                        intermediatePoint = startPoint;
+                        if (intermediatePoint == null) intermediatePoint = startPoint;
                         continue;
                     }
 
@@ -165,6 +168,8 @@ public class PipeTypeService
                     previousPipe = nextPipe;
 
                     previousConnector = ExtractPipeConnector(connectorSet2, endPoint);
+
+                    i = index - 1;
                 }
 
                 transaction.Commit();
@@ -198,23 +203,20 @@ public class PipeTypeService
 
     public static int CountMissingPoints(IList<XYZ> points, int count)
     {
-        int result = 0;
         for (int i = count; i < points.Count - 2; i++)
         {
-            if (ArePointsOnSameLine(points[i], points[i + 1], points[i + 2]))
+            if (!ArePointsOnSameLine(points[i], points[i + 1], points[i + 2]))
             {
-                result++;
-            }
-            else
-            {
-                return result;
+                return i + 1;
             }
         }
-        return result;
+        return points.Count - 1;
     }
 
-    public static bool ArePointsOnSameLine(XYZ A, XYZ B, XYZ C, double tolerance = 0.1)
+    public static bool ArePointsOnSameLine(XYZ A, XYZ B, XYZ C, double tolerance = 0.05)
     {
+        //MessageBox.Show($"{A.ToString()}\n{B.ToString()}\n{C.ToString()}");
+
         XYZ AB = B - A;
         XYZ BC = C - B;
 
@@ -257,11 +259,16 @@ public class DwgConverter
         //    .ToList();
     }
 
-    public IList<IList<XYZ>> GetListVerticesFromDwg(ImportInstance dwg)
+    public IList<IList<XYZ>> GetListVerticesFromDwg(ImportInstance dwg, bool flagRounding = true)
     {
         double tolerance = 0.01;
         IList<IList<XYZ>> result = new List<IList<XYZ>>();
         IList<XYZ> currentPolylinePoints = new List<XYZ>();
+
+        XYZ p0, p1, p2, p3;
+        p0 = p1 = p2 = p3 = null;
+
+        double minLen = 0.0254;
 
         GeometryElement geometryElement = dwg.get_Geometry(new Options());
 
@@ -279,35 +286,75 @@ public class DwgConverter
 
         XYZ lastPoint = null;
 
-        foreach (GeometryObject line in geometryInstance.GetInstanceGeometry())
+        IList<NurbSpline> splines = geometryInstance.GetInstanceGeometry()
+            .Where(g => g is NurbSpline)
+            .Cast<NurbSpline>()
+            .ToList();
+
+        for (int i = 0; i < splines.Count; i++)
         {
-            if (line is NurbSpline spline)
+            NurbSpline spline = splines[i];
+            IList<XYZ> points = spline.CtrlPoints;
+
+            if (flagRounding)
             {
-                IList<XYZ> points = spline.CtrlPoints;
+                p1 = points.First();
+                p2 = points.Last();
 
-                if (points.Count == 0) continue;
+                Line chord = null;
 
-                XYZ firstPoint = points.First();
+                if (p1.DistanceTo(p2) > minLen)
+                {
+                    chord = Line.CreateBound(points.First(), points.Last());
 
-                if (lastPoint == null)
-                {
-                    currentPolylinePoints = new List<XYZ>(points);
-                }
-                else if (firstPoint.DistanceTo(lastPoint) <= tolerance)
-                {
-                    currentPolylinePoints = currentPolylinePoints.Concat(points.Skip(1)).ToList();
-                }
-                else
-                {
-                    if (currentPolylinePoints.Count > 1)
+                    XYZ mid = spline.Evaluate(0.5, true);
+                    double dist = chord.Distance(mid);
+
+                    if (dist > tolerance)
                     {
-                        result.Add(new List<XYZ>(currentPolylinePoints));
-                    }
-                    currentPolylinePoints = new List<XYZ>(points);
-                }
+                        //currentPolylinePoints.Add(p1);
+                        if(i != 0 && i != splines.Count)
+                        {
+                            if(splines[i - 1].CtrlPoints.First().DistanceTo(p1) > minLen &&
+                            p2.DistanceTo(splines[i + 1].CtrlPoints.Last()) > minLen)
+                            {
+                                Line line1 = Line.CreateBound(splines[i - 1].CtrlPoints.First(), p1);
+                                Line line2 = Line.CreateBound(p2, splines[i + 1].CtrlPoints.Last());
 
-                lastPoint = points.Last();
+                                XYZ p = GetIntersection(line1, line2);
+
+                                if (p != null) { 
+                                    currentPolylinePoints.Add(p);
+                                }
+                            }
+                        }
+
+                        lastPoint = p2;
+                        continue;
+                    }
+                }
             }
+
+            XYZ firstPoint = points.First();
+
+            if (lastPoint == null)
+            {
+                currentPolylinePoints = new List<XYZ>(points);
+            }
+            else if (firstPoint.DistanceTo(lastPoint) <= tolerance)
+            {
+                currentPolylinePoints = currentPolylinePoints.Concat(points.Skip(1)).ToList();
+            }
+            else
+            {
+                if (currentPolylinePoints.Count > 1)
+                {
+                    result.Add(new List<XYZ>(currentPolylinePoints));
+                }
+                currentPolylinePoints = new List<XYZ>(points);
+            }
+
+            lastPoint = points.Last();
         }
 
         if (currentPolylinePoints.Count > 1)
@@ -316,6 +363,22 @@ public class DwgConverter
         }
 
         return result;
+    }
+
+    public static XYZ GetIntersection(Line ray1, Line ray2)
+    {
+        Line unbound1 = Line.CreateUnbound(ray1.Origin, ray1.Direction);
+        Line unbound2 = Line.CreateUnbound(ray2.Origin, ray2.Direction);
+
+        IntersectionResultArray results;
+        SetComparisonResult result = unbound1.Intersect(unbound2, out results);
+
+        if (result == SetComparisonResult.Overlap && results != null && results.Size > 0)
+        {
+            return results.get_Item(0).XYZPoint;
+        }
+
+        return null;
     }
 
     public IList<XYZ> GetVerticesFromDwg(ImportInstance dwg)

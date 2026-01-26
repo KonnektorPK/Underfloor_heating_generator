@@ -8,6 +8,7 @@ using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Menu;
@@ -95,9 +96,13 @@ namespace Underfloor_heating_generator
             {
                 pipeTypeService.DrawPipes(point, pipeDiametr, pipeHeightLayer, pipeType.Id, LevelID, pipeSystemType.Id);
             }
-            stopwatch.Stop(); 
 
-            MessageBox.Show($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
+            //IList<XYZ> point = new List<XYZ> { new XYZ(0, 0, 0), new XYZ(0, 100, 0), new XYZ(100, 100, 0) };
+
+            //pipeTypeService.DrawPipes(point, pipeDiametr, pipeHeightLayer, pipeType.Id, LevelID, pipeSystemType.Id);
+            stopwatch.Stop();
+
+            System.Windows.MessageBox.Show($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
         }
 
         private void PipeSelection_SelectedIndexChanged(object sender, EventArgs e)
