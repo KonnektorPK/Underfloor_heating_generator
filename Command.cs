@@ -1,23 +1,12 @@
 ﻿#region Namespaces
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Net;
-using System.Security.Cryptography.X509Certificates;
-using System.Security.RightsManagement;
-using System.Windows.Controls;
 using System.Windows.Forms;
-using System.Windows.Media.Media3D;
-using Autodesk.Revit.ApplicationServices;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
-using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
-using Autodesk.Revit.UI.Selection;
 using RevitApp = Autodesk.Revit.ApplicationServices.Application;
 using RevitView = Autodesk.Revit.DB.View;
 #endregion

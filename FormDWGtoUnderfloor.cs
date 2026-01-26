@@ -36,17 +36,22 @@ namespace Underfloor_heating_generator
             this.MaximizeBox = false;
 
             ElementId LevelID = userParametrs.GetLevelId();
-            //if (LevelID == null) this.Close();
+            if (LevelID == null)
+            {
+                this.Shown += (sender, e) => this.Close();
+            }
+            else
+            {
+                LoadComboBox(PipeSelection, true, () => pipeTypeService.GetPipeTypes());
+                LoadComboBox(SystemTypePipe, true, () => pipeTypeService.GetSystemTypesPipe());
+                LoadComboBox(SelectDrawingDWG, true, () => dwgConverter.GetDWGDrawings(LevelID));
+            }
 
-            LoadComboBox(PipeSelection, true, () => pipeTypeService.GetPipeTypes());
-            LoadComboBox(SystemTypePipe, true, () => pipeTypeService.GetSystemTypesPipe());
-            LoadComboBox(SelectDrawingDWG, true, () => dwgConverter.GetDWGDrawings(LevelID));
-
-            PipeSelection.SelectedIndex = 1;
-            SystemTypePipe.SelectedIndex = 0;
-            SelectDrawingDWG.SelectedIndex = 0;
-            PipeLayingHeight.SelectedIndex = 0;
-            PipeDiametr.SelectedIndex = 0;
+            //PipeSelection.SelectedIndex = 1;
+            //SystemTypePipe.SelectedIndex = 0;
+            //SelectDrawingDWG.SelectedIndex = 0;
+            //PipeLayingHeight.SelectedIndex = 0;
+            //PipeDiametr.SelectedIndex = 0;
         }
 
         private void LoadComboBox(System.Windows.Forms.ComboBox boxItem, bool allowUserInput, Func<IList<Element>> getElement)
@@ -66,43 +71,59 @@ namespace Underfloor_heating_generator
             if (boxItem.Items.Count == 1) boxItem.SelectedIndex = 0;
         }
 
-        private bool CheckNullParamets(System.Windows.Forms.ComboBox[] boxItems)
-        {
-
-
-            return true;
-        }
-
         private void CreateWarmFloor_Click(object sender, EventArgs e)
         {
-            Element pipeType = pipeTypeService.GetPipeType(PipeSelection.SelectedIndex);
-            Element pipeSystemType = pipeTypeService.GetSystemTypePipe(SystemTypePipe.SelectedIndex);
-            ImportInstance dwg = dwgConverter.GetDWGDrawings(SelectDrawingDWG.SelectedIndex);
-            ElementId LevelID = userParametrs.GetLevelId();
-
-            double pipeDiametr = Convert.ToDouble(PipeDiametr.Text);
-            double pipeHeightLayer = Convert.ToDouble(PipeLayingHeight.Text);
-
-            Stopwatch stopwatch = new Stopwatch();
-
-            //stopwatch.Start();
-            IList<IList<XYZ>> points = dwgConverter.GetListVerticesFromDwg(dwg);
-            //stopwatch.Stop();
-
-            //MessageBox.Show($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
-
-            stopwatch.Start();
-            foreach (IList<XYZ> point in points)
+            System.Windows.Forms.ComboBox[] comboBoxesIsNotNull = new System.Windows.Forms.ComboBox[] 
             {
-                pipeTypeService.DrawPipes(point, pipeDiametr, pipeHeightLayer, pipeType.Id, LevelID, pipeSystemType.Id);
+                PipeSelection,
+                SystemTypePipe,
+                SelectDrawingDWG,
+                PipeLayingHeight,
+                PipeDiametr
+            };
+
+            System.Windows.Forms.ComboBox[] comboBoxesIsNumber = new System.Windows.Forms.ComboBox[]
+            {
+                PipeLayingHeight,
+                PipeDiametr
+            };
+
+            System.Windows.Forms.ComboBox[] comboBoxesIsNegativeNumber = new System.Windows.Forms.ComboBox[]
+            {
+                PipeDiametr
+            };
+
+            if (CheckNullParamets(comboBoxesIsNotNull) 
+                && CheckForNumber(comboBoxesIsNumber) 
+                && CheckIsNegativeNumber(comboBoxesIsNegativeNumber))
+            {
+                Element pipeType = pipeTypeService.GetPipeType(PipeSelection.SelectedIndex);
+                Element pipeSystemType = pipeTypeService.GetSystemTypePipe(SystemTypePipe.SelectedIndex);
+                ImportInstance dwg = dwgConverter.GetDWGDrawings(SelectDrawingDWG.SelectedIndex);
+                ElementId LevelID = userParametrs.GetLevelId();
+
+                double pipeDiametr = Convert.ToDouble(PipeDiametr.Text);
+                double pipeHeightLayer = Convert.ToDouble(PipeLayingHeight.Text);
+
+                IList<IList<XYZ>> splinePoints = dwgConverter.GetListVerticesFromDwg(dwg);
+
+                //Stopwatch stopwatch = new Stopwatch();
+                //stopwatch.Start();
+                foreach (IList<XYZ> spline in splinePoints)
+                {
+                    pipeTypeService.DrawPipes(spline, pipeDiametr, pipeHeightLayer, pipeType.Id, LevelID, pipeSystemType.Id);
+                }
+                //stopwatch.Stop();
+
+                //System.Windows.MessageBox.Show($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
             }
-
-            //IList<XYZ> point = new List<XYZ> { new XYZ(0, 0, 0), new XYZ(0, 100, 0), new XYZ(100, 100, 0) };
-
-            //pipeTypeService.DrawPipes(point, pipeDiametr, pipeHeightLayer, pipeType.Id, LevelID, pipeSystemType.Id);
-            stopwatch.Stop();
-
-            System.Windows.MessageBox.Show($"Время выполнения: {stopwatch.ElapsedMilliseconds} мс");
+            else
+            {
+                System.Windows.Forms.MessageBox.Show("Ошибка валидации данных, проверьте значения!",
+                    "Обнаружена ошибка!",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
 
         private void PipeSelection_SelectedIndexChanged(object sender, EventArgs e)
@@ -123,6 +144,92 @@ namespace Underfloor_heating_generator
         private void SelectLayerDWG_SelectedIndexChanged(object sender, EventArgs e)
         {
 
+        }
+
+        private void PipeSelection_label_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private bool CheckNullParamets(System.Windows.Forms.ComboBox[] boxItems)
+        {
+            bool result = true;
+
+            foreach (var item in boxItems)
+            {
+                if (item.Text == null || string.IsNullOrEmpty(item.Text.ToString()))
+                {
+                    string labelName = item.Name + "_label";
+                    System.Windows.Forms.Label label = this.Controls.Find(labelName, true)[0] as System.Windows.Forms.Label;
+
+                    label.BackColor = System.Drawing.Color.Orange;
+
+                    result = false;
+                }
+                else
+                {
+                    string labelName = item.Name + "_label";
+                    System.Windows.Forms.Label label = this.Controls.Find(labelName, true)[0] as System.Windows.Forms.Label;
+
+                    label.BackColor = System.Drawing.SystemColors.Control;
+                }
+            }
+
+            return result;
+        }
+
+        private bool CheckForNumber(System.Windows.Forms.ComboBox[] boxItems)
+        {
+            bool result = true;
+
+            foreach (var item in boxItems)
+            {
+                if (!double.TryParse(item.Text.ToString(), out double diameter))
+                {
+                    string labelName = item.Name + "_label";
+                    System.Windows.Forms.Label label = this.Controls.Find(labelName, true)[0] as System.Windows.Forms.Label;
+
+                    label.BackColor = System.Drawing.Color.Orange;
+
+                    result = false;
+                }
+                else
+                {
+                    string labelName = item.Name + "_label";
+                    System.Windows.Forms.Label label = this.Controls.Find(labelName, true)[0] as System.Windows.Forms.Label;
+
+                    label.BackColor = System.Drawing.SystemColors.Control;
+                }
+            }
+
+            return result;
+        }
+
+        private bool CheckIsNegativeNumber(System.Windows.Forms.ComboBox[] boxItems)
+        {
+            bool result = true;
+
+            foreach (var item in boxItems)
+            {
+                if (!double.TryParse(item.Text.ToString(), out double diameter) || diameter <= 0)
+                {
+                    string labelName = item.Name + "_label";
+                    System.Windows.Forms.Label label = this.Controls.Find(labelName, true)[0] as System.Windows.Forms.Label;
+
+                    label.BackColor = System.Drawing.Color.Orange;
+
+                    result = false;
+                }
+                else
+                {
+                    string labelName = item.Name + "_label";
+                    System.Windows.Forms.Label label = this.Controls.Find(labelName, true)[0] as System.Windows.Forms.Label;
+
+                    label.BackColor = System.Drawing.SystemColors.Control;
+                }
+            }
+
+            return result;
         }
     }
 }

@@ -29,32 +29,32 @@
         private void InitializeComponent()
         {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FormDWGtoUnderfloor));
-            this.label11 = new System.Windows.Forms.Label();
+            this.SystemTypePipe_label = new System.Windows.Forms.Label();
             this.SystemTypePipe = new System.Windows.Forms.ComboBox();
             this.CreateWarmFloor = new System.Windows.Forms.Button();
             this.SaveChanges = new System.Windows.Forms.CheckBox();
             this.label9 = new System.Windows.Forms.Label();
             this.label10 = new System.Windows.Forms.Label();
-            this.label3 = new System.Windows.Forms.Label();
+            this.PipeLayingHeight_label = new System.Windows.Forms.Label();
             this.PipeLayingHeight = new System.Windows.Forms.ComboBox();
-            this.label2 = new System.Windows.Forms.Label();
+            this.PipeDiametr_label = new System.Windows.Forms.Label();
             this.PipeDiametr = new System.Windows.Forms.ComboBox();
-            this.label1 = new System.Windows.Forms.Label();
+            this.PipeSelection_label = new System.Windows.Forms.Label();
             this.PipeSelection = new System.Windows.Forms.ComboBox();
-            this.label4 = new System.Windows.Forms.Label();
+            this.SelectDrawingDWG_label = new System.Windows.Forms.Label();
             this.SelectDrawingDWG = new System.Windows.Forms.ComboBox();
-            this.SelectLayerDWG = new System.Windows.Forms.ComboBox();
             this.label5 = new System.Windows.Forms.Label();
+            this.SelectLayerDWG = new System.Windows.Forms.ComboBox();
             this.SuspendLayout();
             // 
-            // label11
+            // SystemTypePipe_label
             // 
-            this.label11.AutoSize = true;
-            this.label11.Location = new System.Drawing.Point(130, 88);
-            this.label11.Name = "label11";
-            this.label11.Size = new System.Drawing.Size(234, 20);
-            this.label11.TabIndex = 34;
-            this.label11.Text = "Выберете тип системы трубы";
+            this.SystemTypePipe_label.AutoSize = true;
+            this.SystemTypePipe_label.Location = new System.Drawing.Point(130, 88);
+            this.SystemTypePipe_label.Name = "SystemTypePipe_label";
+            this.SystemTypePipe_label.Size = new System.Drawing.Size(234, 20);
+            this.SystemTypePipe_label.TabIndex = 34;
+            this.SystemTypePipe_label.Text = "Выберете тип системы трубы";
             // 
             // SystemTypePipe
             // 
@@ -68,7 +68,7 @@
             // 
             // CreateWarmFloor
             // 
-            this.CreateWarmFloor.Location = new System.Drawing.Point(11, 353);
+            this.CreateWarmFloor.Location = new System.Drawing.Point(11, 334);
             this.CreateWarmFloor.Name = "CreateWarmFloor";
             this.CreateWarmFloor.Size = new System.Drawing.Size(460, 29);
             this.CreateWarmFloor.TabIndex = 32;
@@ -81,7 +81,7 @@
             this.SaveChanges.AutoSize = true;
             this.SaveChanges.Checked = true;
             this.SaveChanges.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.SaveChanges.Location = new System.Drawing.Point(11, 319);
+            this.SaveChanges.Location = new System.Drawing.Point(11, 304);
             this.SaveChanges.Name = "SaveChanges";
             this.SaveChanges.Size = new System.Drawing.Size(388, 24);
             this.SaveChanges.TabIndex = 31;
@@ -106,14 +106,14 @@
             this.label10.TabIndex = 29;
             this.label10.Text = "мм";
             // 
-            // label3
+            // PipeLayingHeight_label
             // 
-            this.label3.AutoSize = true;
-            this.label3.Location = new System.Drawing.Point(240, 238);
-            this.label3.Name = "label3";
-            this.label3.Size = new System.Drawing.Size(207, 20);
-            this.label3.TabIndex = 28;
-            this.label3.Text = "Высота от у.ч.п до центра";
+            this.PipeLayingHeight_label.AutoSize = true;
+            this.PipeLayingHeight_label.Location = new System.Drawing.Point(240, 238);
+            this.PipeLayingHeight_label.Name = "PipeLayingHeight_label";
+            this.PipeLayingHeight_label.Size = new System.Drawing.Size(207, 20);
+            this.PipeLayingHeight_label.TabIndex = 28;
+            this.PipeLayingHeight_label.Text = "Высота от у.ч.п до центра";
             // 
             // PipeLayingHeight
             // 
@@ -133,14 +133,14 @@
             this.PipeLayingHeight.Size = new System.Drawing.Size(190, 28);
             this.PipeLayingHeight.TabIndex = 27;
             // 
-            // label2
+            // PipeDiametr_label
             // 
-            this.label2.AutoSize = true;
-            this.label2.Location = new System.Drawing.Point(11, 238);
-            this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(190, 20);
-            this.label2.TabIndex = 26;
-            this.label2.Text = "Размер трубы (сечение)";
+            this.PipeDiametr_label.AutoSize = true;
+            this.PipeDiametr_label.Location = new System.Drawing.Point(11, 238);
+            this.PipeDiametr_label.Name = "PipeDiametr_label";
+            this.PipeDiametr_label.Size = new System.Drawing.Size(190, 20);
+            this.PipeDiametr_label.TabIndex = 26;
+            this.PipeDiametr_label.Text = "Размер трубы (сечение)";
             // 
             // PipeDiametr
             // 
@@ -155,14 +155,15 @@
             this.PipeDiametr.Size = new System.Drawing.Size(190, 28);
             this.PipeDiametr.TabIndex = 25;
             // 
-            // label1
+            // PipeSelection_label
             // 
-            this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(179, 9);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(130, 20);
-            this.label1.TabIndex = 24;
-            this.label1.Text = "Выберете трубу";
+            this.PipeSelection_label.AutoSize = true;
+            this.PipeSelection_label.Location = new System.Drawing.Point(179, 9);
+            this.PipeSelection_label.Name = "PipeSelection_label";
+            this.PipeSelection_label.Size = new System.Drawing.Size(130, 20);
+            this.PipeSelection_label.TabIndex = 24;
+            this.PipeSelection_label.Text = "Выберете трубу";
+            this.PipeSelection_label.Click += new System.EventHandler(this.PipeSelection_label_Click);
             // 
             // PipeSelection
             // 
@@ -174,14 +175,14 @@
             this.PipeSelection.TabIndex = 23;
             this.PipeSelection.SelectedIndexChanged += new System.EventHandler(this.PipeSelection_SelectedIndexChanged);
             // 
-            // label4
+            // SelectDrawingDWG_label
             // 
-            this.label4.AutoSize = true;
-            this.label4.Location = new System.Drawing.Point(105, 164);
-            this.label4.Name = "label4";
-            this.label4.Size = new System.Drawing.Size(285, 20);
-            this.label4.TabIndex = 36;
-            this.label4.Text = "Выберете чертеж на данном уровне";
+            this.SelectDrawingDWG_label.AutoSize = true;
+            this.SelectDrawingDWG_label.Location = new System.Drawing.Point(105, 164);
+            this.SelectDrawingDWG_label.Name = "SelectDrawingDWG_label";
+            this.SelectDrawingDWG_label.Size = new System.Drawing.Size(285, 20);
+            this.SelectDrawingDWG_label.TabIndex = 36;
+            this.SelectDrawingDWG_label.Text = "Выберете чертеж на данном уровне";
             // 
             // SelectDrawingDWG
             // 
@@ -193,47 +194,46 @@
             this.SelectDrawingDWG.TabIndex = 35;
             this.SelectDrawingDWG.SelectedIndexChanged += new System.EventHandler(this.SelectDrawingDWG_SelectedIndexChanged);
             // 
+            // label5
+            // 
+            this.label5.AutoSize = true;
+            this.label5.Location = new System.Drawing.Point(138, 239);
+            this.label5.Name = "label5";
+            this.label5.Size = new System.Drawing.Size(216, 20);
+            this.label5.TabIndex = 42;
+            this.label5.Text = "Выберете слой на чертеже";
+            this.label5.Visible = false;
+            // 
             // SelectLayerDWG
             // 
             this.SelectLayerDWG.BackColor = System.Drawing.SystemColors.Window;
             this.SelectLayerDWG.FormattingEnabled = true;
-            this.SelectLayerDWG.Location = new System.Drawing.Point(11, 269);
+            this.SelectLayerDWG.Location = new System.Drawing.Point(11, 270);
             this.SelectLayerDWG.Name = "SelectLayerDWG";
             this.SelectLayerDWG.Size = new System.Drawing.Size(460, 28);
-            this.SelectLayerDWG.TabIndex = 37;
+            this.SelectLayerDWG.TabIndex = 41;
             this.SelectLayerDWG.Visible = false;
-            this.SelectLayerDWG.SelectedIndexChanged += new System.EventHandler(this.SelectLayerDWG_SelectedIndexChanged);
-            // 
-            // label5
-            // 
-            this.label5.AutoSize = true;
-            this.label5.Location = new System.Drawing.Point(138, 238);
-            this.label5.Name = "label5";
-            this.label5.Size = new System.Drawing.Size(216, 20);
-            this.label5.TabIndex = 38;
-            this.label5.Text = "Выберете слой на чертеже";
-            this.label5.Visible = false;
             // 
             // FormDWGtoUnderfloor
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(9F, 20F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(478, 392);
+            this.ClientSize = new System.Drawing.Size(478, 374);
             this.Controls.Add(this.label5);
             this.Controls.Add(this.SelectLayerDWG);
-            this.Controls.Add(this.label4);
+            this.Controls.Add(this.SelectDrawingDWG_label);
             this.Controls.Add(this.SelectDrawingDWG);
-            this.Controls.Add(this.label11);
+            this.Controls.Add(this.SystemTypePipe_label);
             this.Controls.Add(this.SystemTypePipe);
             this.Controls.Add(this.CreateWarmFloor);
             this.Controls.Add(this.SaveChanges);
             this.Controls.Add(this.label9);
             this.Controls.Add(this.label10);
-            this.Controls.Add(this.label3);
+            this.Controls.Add(this.PipeLayingHeight_label);
             this.Controls.Add(this.PipeLayingHeight);
-            this.Controls.Add(this.label2);
+            this.Controls.Add(this.PipeDiametr_label);
             this.Controls.Add(this.PipeDiametr);
-            this.Controls.Add(this.label1);
+            this.Controls.Add(this.PipeSelection_label);
             this.Controls.Add(this.PipeSelection);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "FormDWGtoUnderfloor";
@@ -245,21 +245,21 @@
 
         #endregion
 
-        private System.Windows.Forms.Label label11;
+        private System.Windows.Forms.Label SystemTypePipe_label;
         private System.Windows.Forms.ComboBox SystemTypePipe;
         private System.Windows.Forms.Button CreateWarmFloor;
         private System.Windows.Forms.CheckBox SaveChanges;
         private System.Windows.Forms.Label label9;
         private System.Windows.Forms.Label label10;
-        private System.Windows.Forms.Label label3;
+        private System.Windows.Forms.Label PipeLayingHeight_label;
         private System.Windows.Forms.ComboBox PipeLayingHeight;
-        private System.Windows.Forms.Label label2;
+        private System.Windows.Forms.Label PipeDiametr_label;
         private System.Windows.Forms.ComboBox PipeDiametr;
-        private System.Windows.Forms.Label label1;
         private System.Windows.Forms.ComboBox PipeSelection;
-        private System.Windows.Forms.Label label4;
+        private System.Windows.Forms.Label SelectDrawingDWG_label;
         private System.Windows.Forms.ComboBox SelectDrawingDWG;
-        private System.Windows.Forms.ComboBox SelectLayerDWG;
         private System.Windows.Forms.Label label5;
+        private System.Windows.Forms.ComboBox SelectLayerDWG;
+        private System.Windows.Forms.Label PipeSelection_label;
     }
 }
