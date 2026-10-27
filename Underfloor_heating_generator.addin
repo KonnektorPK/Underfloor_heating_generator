@@ -22,7 +22,7 @@
 			Разработчик: neu3no
 		</VendorDescription>
 
-		<!-- Настройки совместимости -->
+		<!-- Настройки совместимости плагина -->
 		<MaximalRevitVersion>2024</MaximalRevitVersion>
 
 	</AddIn>
