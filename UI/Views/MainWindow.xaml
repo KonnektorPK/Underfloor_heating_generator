@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Генератор теплого пола" Height="600" Width="540"
         MinHeight="540" MinWidth="500" ResizeMode="CanMinimize"
-        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Closing="MainWindow_Closing"
         Icon="pack://application:,,,/Underfloor_heating_generator;component/Resources/Icons/WarmFloor.ico">
     <Window.Resources>
         <Style TargetType="TextBlock">
@@ -71,10 +71,8 @@
                                   IsChecked="True" Content="Подгонять направление по DWG (разрешённые углы)" />
                         <StackPanel x:Name="ProgressPanel" Grid.Row="10" Grid.ColumnSpan="2" Margin="0,4,0,10"
                                     Visibility="Collapsed">
-                            <DockPanel Margin="0,0,0,4">
-                                <TextBlock x:Name="ProgressLabel" Margin="0" Text="Создание контуров: 0%" />
-                                <TextBlock x:Name="ProgressPercent" Margin="0" DockPanel.Dock="Right" Text="0%" />
-                            </DockPanel>
+                            <TextBlock x:Name="ProgressPercent" Margin="0,0,0,4" Text="0%"
+                                       HorizontalAlignment="Center" />
                             <ProgressBar x:Name="ContourProgressBar" Height="14" Minimum="0" Maximum="100" Value="0" />
                         </StackPanel>
                         <Button x:Name="CreateWarmFloor" Grid.Row="11" Grid.ColumnSpan="2"

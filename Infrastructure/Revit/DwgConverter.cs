@@ -67,20 +67,17 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
 
                         if (dist > tolerance)
                         {
-                            //currentPolylinePoints.Add(p1);
                             if (i > 0 && i < splines.Count - 1)
                             {
-                                if(splines[i - 1].CtrlPoints.First().DistanceTo(p1) > minLen &&
-                                p2.DistanceTo(splines[i + 1].CtrlPoints.Last()) > minLen)
+                                if (splines[i - 1].CtrlPoints.First().DistanceTo(p1) > minLen &&
+                                    p2.DistanceTo(splines[i + 1].CtrlPoints.Last()) > minLen)
                                 {
                                     Line line1 = Line.CreateBound(splines[i - 1].CtrlPoints.First(), p1);
                                     Line line2 = Line.CreateBound(p2, splines[i + 1].CtrlPoints.Last());
 
                                     XYZ p = GetIntersection(line1, line2);
-
-                                    if (p != null) { 
+                                    if (p != null)
                                         currentPolylinePoints.Add(p);
-                                    }
                                 }
                             }
 
@@ -235,7 +232,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             if (points == null || points.Count < 2)
                 return points;
 
-            double[] baseAngles = { 0, 22.5, 45, 67.5, 90, 30, 60 };
+            double[] baseAngles = { 0, 10, 15, 22.5, 30, 45, 60, 67.5, 90 };
             var allowedAngles = new List<double>();
             foreach (double angle in baseAngles)
             {
@@ -245,30 +242,122 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 AddAngle(allowedAngles, 360 - angle);
             }
 
-            var snapped = new List<XYZ>(points.Count) { points[0] };
+            var runs = new List<DirectionRun>();
             for (int i = 1; i < points.Count; i++)
             {
                 XYZ originalDelta = points[i] - points[i - 1];
                 double x = originalDelta.DotProduct(xAxis);
                 double y = originalDelta.DotProduct(yAxis);
-                double planarLength = Math.Sqrt(x * x + y * y);
-                if (planarLength <= 1e-9)
-                {
-                    snapped.Add(snapped[i - 1] + originalDelta);
+                if (x * x + y * y <= 1e-18)
                     continue;
-                }
 
                 double angle = Math.Atan2(y, x) * 180 / Math.PI;
                 double closest = allowedAngles
                     .OrderBy(candidate => AngularDistance(angle, candidate))
                     .First();
-                double radians = closest * Math.PI / 180;
-                XYZ direction = xAxis * Math.Cos(radians) + yAxis * Math.Sin(radians);
-                double verticalDelta = originalDelta.Z;
-                snapped.Add(snapped[i - 1] + direction * planarLength + XYZ.BasisZ * verticalDelta);
+
+                if (runs.Count > 0 && AngularDistance(runs[runs.Count - 1].AngleDegrees, closest) < 1e-8)
+                    runs[runs.Count - 1].EndPointIndex = i;
+                else
+                    runs.Add(new DirectionRun(i - 1, i, closest));
             }
 
+            if (runs.Count == 0)
+                return new List<XYZ>(points);
+
+            foreach (DirectionRun run in runs)
+                FitRunToSourcePoints(run, points, xAxis, yAxis);
+
+            var snapped = new List<XYZ>(runs.Count + 1)
+            {
+                ProjectOntoRun(points[runs[0].StartPointIndex], runs[0], xAxis, yAxis)
+            };
+
+            for (int i = 1; i < runs.Count; i++)
+            {
+                int sourceIndex = runs[i].StartPointIndex;
+                XYZ join = IntersectRuns(runs[i - 1], runs[i], points[sourceIndex], xAxis, yAxis);
+                snapped.Add(join);
+            }
+
+            DirectionRun lastRun = runs[runs.Count - 1];
+            snapped.Add(ProjectOntoRun(points[lastRun.EndPointIndex], lastRun, xAxis, yAxis));
             return snapped;
+        }
+
+        private sealed class DirectionRun
+        {
+            public DirectionRun(int startPointIndex, int endPointIndex, double angleDegrees)
+            {
+                StartPointIndex = startPointIndex;
+                EndPointIndex = endPointIndex;
+                AngleDegrees = angleDegrees;
+            }
+
+            public int StartPointIndex { get; }
+            public int EndPointIndex { get; set; }
+            public double AngleDegrees { get; }
+            public double NormalOffset { get; set; }
+        }
+
+        private static void FitRunToSourcePoints(DirectionRun run, IList<XYZ> points, XYZ xAxis, XYZ yAxis)
+        {
+            double radians = run.AngleDegrees * Math.PI / 180;
+            double normalX = -Math.Sin(radians);
+            double normalY = Math.Cos(radians);
+            double offsetSum = 0;
+            int pointCount = 0;
+
+            for (int i = run.StartPointIndex; i <= run.EndPointIndex; i++)
+            {
+                double x = points[i].DotProduct(xAxis);
+                double y = points[i].DotProduct(yAxis);
+                offsetSum += x * normalX + y * normalY;
+                pointCount++;
+            }
+
+            run.NormalOffset = pointCount > 0 ? offsetSum / pointCount : 0;
+        }
+
+        private static XYZ ProjectOntoRun(XYZ point, DirectionRun run, XYZ xAxis, XYZ yAxis)
+        {
+            double radians = run.AngleDegrees * Math.PI / 180;
+            double directionX = Math.Cos(radians);
+            double directionY = Math.Sin(radians);
+            double normalX = -directionY;
+            double normalY = directionX;
+            double x = point.DotProduct(xAxis);
+            double y = point.DotProduct(yAxis);
+            double along = x * directionX + y * directionY;
+            double projectedX = along * directionX + run.NormalOffset * normalX;
+            double projectedY = along * directionY + run.NormalOffset * normalY;
+            return xAxis * projectedX + yAxis * projectedY + XYZ.BasisZ * point.Z;
+        }
+
+        private static XYZ IntersectRuns(DirectionRun first, DirectionRun second, XYZ sourceJoin,
+            XYZ xAxis, XYZ yAxis)
+        {
+            double firstRadians = first.AngleDegrees * Math.PI / 180;
+            double secondRadians = second.AngleDegrees * Math.PI / 180;
+            double firstDx = Math.Cos(firstRadians);
+            double firstDy = Math.Sin(firstRadians);
+            double secondDx = Math.Cos(secondRadians);
+            double secondDy = Math.Sin(secondRadians);
+            double denominator = firstDx * secondDy - firstDy * secondDx;
+
+            if (Math.Abs(denominator) < 1e-9)
+                return (ProjectOntoRun(sourceJoin, first, xAxis, yAxis) +
+                    ProjectOntoRun(sourceJoin, second, xAxis, yAxis)) / 2;
+
+            double firstBaseX = -firstDy * first.NormalOffset;
+            double firstBaseY = firstDx * first.NormalOffset;
+            double secondBaseX = -secondDy * second.NormalOffset;
+            double secondBaseY = secondDx * second.NormalOffset;
+            double parameter = ((secondBaseX - firstBaseX) * secondDy -
+                (secondBaseY - firstBaseY) * secondDx) / denominator;
+            double intersectionX = firstBaseX + firstDx * parameter;
+            double intersectionY = firstBaseY + firstDy * parameter;
+            return xAxis * intersectionX + yAxis * intersectionY + XYZ.BasisZ * sourceJoin.Z;
         }
 
         private static void AddAngle(IList<double> angles, double angle)
