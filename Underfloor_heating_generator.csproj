@@ -18,6 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
     <Reference Include="RevitAPI">
       <HintPath>$(RevitInstallDir)RevitAPI.dll</HintPath>
       <Private>false</Private>
