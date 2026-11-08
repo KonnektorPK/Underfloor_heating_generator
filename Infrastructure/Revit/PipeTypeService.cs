@@ -132,18 +132,22 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             return points.Count - 1;
         }
 
-        public static bool ArePointsOnSameLine(XYZ A, XYZ B, XYZ C, double tolerance = 0.05)
+        public static bool ArePointsOnSameLine(XYZ A, XYZ B, XYZ C, double tolerance = 1e-6)
         {
-            //MessageBox.Show($"{A.ToString()}\n{B.ToString()}\n{C.ToString()}");
-
             XYZ AB = B - A;
             XYZ BC = C - B;
+
+            if (AB.GetLength() <= 1e-9 || BC.GetLength() <= 1e-9)
+                return false;
 
             XYZ normAB = AB.Normalize();
             XYZ normBC = BC.Normalize();
 
-            double dot = Math.Abs(normAB.DotProduct(normBC));
-            return Math.Abs(dot - 1.0) <= tolerance;
+            // Only combine forward, nearly identical directions. The previous
+            // absolute-dot check also merged reversals, and its 0.05 threshold
+            // allowed turns of almost 18 degrees to become one chord.
+            double dot = normAB.DotProduct(normBC);
+            return dot > 0 && 1.0 - dot <= tolerance;
         }
 
         public static double CosineAngleBetweenLines(Line line1, Line line2)

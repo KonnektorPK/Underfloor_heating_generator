@@ -232,14 +232,13 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             if (points == null || points.Count < 2)
                 return points;
 
-            double[] baseAngles = { 0, 10, 15, 22.5, 30, 45, 60, 67.5, 90 };
             var allowedAngles = new List<double>();
-            foreach (double angle in baseAngles)
+            // Use every 5-degree direction in the active view's XY plane.
+            // Normalize and deduplicate through AddAngle to keep the snap set
+            // consistent with the existing angular-distance logic.
+            for (int angle = 0; angle < 360; angle += 5)
             {
                 AddAngle(allowedAngles, angle);
-                AddAngle(allowedAngles, 180 - angle);
-                AddAngle(allowedAngles, angle + 180);
-                AddAngle(allowedAngles, 360 - angle);
             }
 
             var runs = new List<DirectionRun>();
