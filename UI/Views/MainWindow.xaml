@@ -80,7 +80,7 @@
                     </Grid>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="Настройки теплого пола (заглушка)">
+            <TabItem Header="Теплый пол по помещению">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <Grid Margin="12">
                         <Grid.ColumnDefinitions>
@@ -95,31 +95,59 @@
                             <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Тип трубы" />
-                        <ComboBox x:Name="StubPipeSelection" Grid.Row="1" Grid.ColumnSpan="2" IsEnabled="False" />
-                        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="Тип системы трубы" />
-                        <ComboBox x:Name="StubSystemTypePipe" Grid.Row="3" Grid.ColumnSpan="2" IsEnabled="False" />
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Диаметр трубы, мм" />
-                        <TextBlock Grid.Row="4" Grid.Column="1" Text="Высота укладки, мм" />
-                        <ComboBox Grid.Row="5" Grid.Column="0" Margin="0,0,6,0" IsEnabled="False">
+                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Область построения" />
+                        <Button x:Name="SelectFloorAreaButton" Grid.Row="1" Grid.ColumnSpan="2"
+                                Content="Выбрать помещение или цветовую область на плане"
+                                Click="SelectFloorArea_Click" />
+                        <TextBlock x:Name="SelectedFloorAreaText" Grid.Row="2" Grid.ColumnSpan="2"
+                                   Margin="0,6,0,4" Foreground="Gray" Text="Область не выбрана"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="Начальная труба" />
+                        <Button x:Name="SelectStartPipeButton" Grid.Row="4" Grid.ColumnSpan="2"
+                                Tag="Start" Content="Выбрать трубу начала" Click="SelectPipeEndpoint_Click" />
+                        <TextBlock x:Name="SelectedStartPipeText" Grid.Row="5" Grid.ColumnSpan="2"
+                                   Margin="0,4,0,4" Foreground="Gray" Text="Начальная труба не выбрана"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="6" Grid.ColumnSpan="2" Text="Конечная труба" />
+                        <Button x:Name="SelectEndPipeButton" Grid.Row="7" Grid.ColumnSpan="2"
+                                Tag="End" Content="Выбрать трубу конца" Click="SelectPipeEndpoint_Click" />
+                        <TextBlock x:Name="SelectedEndPipeText" Grid.Row="8" Grid.ColumnSpan="2"
+                                   Margin="0,4,0,4" Foreground="Gray" Text="Конечная труба не выбрана"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="9" Grid.ColumnSpan="2" Text="Тип трубы" />
+                        <ComboBox x:Name="StubPipeSelection" Grid.Row="10" Grid.ColumnSpan="2" />
+                        <TextBlock Grid.Row="11" Grid.ColumnSpan="2" Text="Тип системы трубы" />
+                        <ComboBox x:Name="StubSystemTypePipe" Grid.Row="12" Grid.ColumnSpan="2" />
+                        <TextBlock Grid.Row="13" Grid.Column="0" Text="Диаметр трубы, мм" />
+                        <TextBlock Grid.Row="13" Grid.Column="1" Text="Высота укладки, мм" />
+                        <ComboBox x:Name="StubPipeDiameter" Grid.Row="14" Grid.Column="0" Margin="0,0,6,0" IsEditable="True">
                             <ComboBoxItem Content="16" /><ComboBoxItem Content="20" />
                         </ComboBox>
-                        <ComboBox Grid.Row="5" Grid.Column="1" Margin="6,0,0,0" IsEnabled="False">
+                        <ComboBox x:Name="StubLayingHeight" Grid.Row="14" Grid.Column="1" Margin="6,0,0,0" IsEditable="True">
                             <ComboBoxItem Content="0" /><ComboBoxItem Content="-20" />
                         </ComboBox>
-                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Отступ от стены, мм" />
-                        <TextBlock Grid.Row="6" Grid.Column="1" Text="Шаг укладки, мм" />
-                        <ComboBox Grid.Row="7" Grid.Column="0" Margin="0,0,6,0" IsEnabled="False" />
-                        <ComboBox Grid.Row="7" Grid.Column="1" Margin="6,0,0,0" IsEnabled="False" />
-                        <TextBlock Grid.Row="8" Grid.ColumnSpan="2" Text="Расстояние от коллектора, мм" />
-                        <ComboBox Grid.Row="9" Grid.ColumnSpan="2" IsEnabled="False" />
-                        <CheckBox Grid.Row="10" Grid.ColumnSpan="2" Margin="0,14,0,12"
-                                  IsChecked="True" IsEnabled="False" Content="Сохранить текущие значения при перезапуске" />
-                        <TextBlock Grid.Row="11" Grid.ColumnSpan="2" Margin="0,8,0,16" Foreground="Gray"
-                                   Text="Эта вкладка пока является копией-заглушкой. Ее настройки и действие будут реализованы позже."
+                        <TextBlock Grid.Row="15" Grid.Column="0" Text="Отступ от стены, мм" />
+                        <TextBlock Grid.Row="15" Grid.Column="1" Text="Шаг укладки, мм" />
+                        <ComboBox x:Name="WallOffset" Grid.Row="16" Grid.Column="0" Margin="0,0,6,0" IsEditable="True">
+                            <ComboBoxItem Content="50" /><ComboBoxItem Content="100" /><ComboBoxItem Content="150" /><ComboBoxItem Content="200" />
+                        </ComboBox>
+                        <ComboBox x:Name="PipeSpacing" Grid.Row="16" Grid.Column="1" Margin="6,0,0,0" IsEditable="True">
+                            <ComboBoxItem Content="100" /><ComboBoxItem Content="150" /><ComboBoxItem Content="200" /><ComboBoxItem Content="250" /><ComboBoxItem Content="300" />
+                        </ComboBox>
+                        <TextBlock Grid.Row="17" Grid.ColumnSpan="2" Text="Расстояние от коллектора, мм" />
+                        <ComboBox Grid.Row="18" Grid.ColumnSpan="2" IsEnabled="False" />
+                        <CheckBox x:Name="SaveAreaValues" Grid.Row="19" Grid.ColumnSpan="2" Margin="0,14,0,12"
+                                  IsChecked="True" Content="Сохранить текущие значения при перезапуске" />
+                        <TextBlock Grid.Row="20" Grid.ColumnSpan="2" Margin="0,8,0,16" Foreground="Gray"
+                                   Text="Выберите область и две трубы со свободными концами. Их диаметр и система должны совпадать с настройками."
                                    TextWrapping="Wrap" />
-                        <Button Grid.Row="12" Grid.ColumnSpan="2" Content="Построить теплый пол" IsEnabled="False" />
+                        <Button x:Name="CreateAreaWarmFloor" Grid.Row="21" Grid.ColumnSpan="2"
+                                Content="Построить теплый пол" Click="CreateAreaWarmFloor_Click" />
                     </Grid>
                 </ScrollViewer>
             </TabItem>

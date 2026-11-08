@@ -13,6 +13,13 @@ namespace Underfloor_heating_generator.UI.Settings
         public string PipeDiameter { get; set; }
         public string LayingHeight { get; set; }
         public bool AlignDirectionsToAllowedAngles { get; set; } = true;
+        public bool SaveAreaValues { get; set; } = true;
+        public long? AreaPipeTypeId { get; set; }
+        public long? AreaSystemTypeId { get; set; }
+        public string AreaPipeDiameter { get; set; }
+        public string AreaLayingHeight { get; set; }
+        public string AreaWallOffset { get; set; }
+        public string AreaPipeSpacing { get; set; }
     }
 
     internal static class WarmFloorWindowSettingsStore
