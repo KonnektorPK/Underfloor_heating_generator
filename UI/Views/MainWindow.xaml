@@ -1,0 +1,119 @@
+<Window x:Class="Underfloor_heating_generator.UI.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Генератор теплого пола" Height="560" Width="540"
+        MinHeight="500" MinWidth="500" ResizeMode="CanMinimize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Icon="pack://application:,,,/Underfloor_heating_generator;component/Resources/Icons/WarmFloor.ico">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,8,0,4" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="4,2" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Padding" Value="10,4" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TabControl Grid.Row="0">
+            <TabItem Header="DWG в теплый пол">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Тип трубы" />
+                        <ComboBox x:Name="PipeSelection" Grid.Row="1" Grid.ColumnSpan="2" />
+                        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="Тип системы трубы" />
+                        <ComboBox x:Name="SystemTypePipe" Grid.Row="3" Grid.ColumnSpan="2" />
+                        <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Text="Чертеж на активном уровне" />
+                        <ComboBox x:Name="SelectDrawingDWG" Grid.Row="5" Grid.ColumnSpan="2" />
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Диаметр трубы, мм" />
+                        <TextBlock Grid.Row="6" Grid.Column="1" Text="Высота укладки, мм" />
+                        <ComboBox x:Name="PipeDiametr" Grid.Row="7" Grid.Column="0" Margin="0,0,6,0" IsEditable="True">
+                            <ComboBoxItem Content="16" /><ComboBoxItem Content="20" />
+                            <ComboBoxItem Content="25" /><ComboBoxItem Content="32" />
+                        </ComboBox>
+                        <ComboBox x:Name="PipeLayingHeight" Grid.Row="7" Grid.Column="1" Margin="6,0,0,0" IsEditable="True">
+                            <ComboBoxItem Content="0" /><ComboBoxItem Content="-20" />
+                            <ComboBoxItem Content="-30" /><ComboBoxItem Content="-45" />
+                            <ComboBoxItem Content="-77" /><ComboBoxItem Content="-90" />
+                            <ComboBoxItem Content="-100" /><ComboBoxItem Content="-110" />
+                            <ComboBoxItem Content="-125" />
+                        </ComboBox>
+                        <CheckBox x:Name="SaveChanges" Grid.Row="8" Grid.ColumnSpan="2" Margin="0,14,0,12"
+                                  IsChecked="True" Content="Сохранить текущие значения при перезапуске" />
+                        <Button x:Name="CreateWarmFloor" Grid.Row="9" Grid.ColumnSpan="2"
+                                Content="Построить теплый пол из DWG" Click="CreateWarmFloor_Click" />
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Настройки теплого пола (заглушка)">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Тип трубы" />
+                        <ComboBox x:Name="StubPipeSelection" Grid.Row="1" Grid.ColumnSpan="2" IsEnabled="False" />
+                        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="Тип системы трубы" />
+                        <ComboBox x:Name="StubSystemTypePipe" Grid.Row="3" Grid.ColumnSpan="2" IsEnabled="False" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Диаметр трубы, мм" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="Высота укладки, мм" />
+                        <ComboBox Grid.Row="5" Grid.Column="0" Margin="0,0,6,0" IsEnabled="False">
+                            <ComboBoxItem Content="16" /><ComboBoxItem Content="20" />
+                        </ComboBox>
+                        <ComboBox Grid.Row="5" Grid.Column="1" Margin="6,0,0,0" IsEnabled="False">
+                            <ComboBoxItem Content="0" /><ComboBoxItem Content="-20" />
+                        </ComboBox>
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Отступ от стены, мм" />
+                        <TextBlock Grid.Row="6" Grid.Column="1" Text="Шаг укладки, мм" />
+                        <ComboBox Grid.Row="7" Grid.Column="0" Margin="0,0,6,0" IsEnabled="False" />
+                        <ComboBox Grid.Row="7" Grid.Column="1" Margin="6,0,0,0" IsEnabled="False" />
+                        <TextBlock Grid.Row="8" Grid.ColumnSpan="2" Text="Расстояние от коллектора, мм" />
+                        <ComboBox Grid.Row="9" Grid.ColumnSpan="2" IsEnabled="False" />
+                        <CheckBox Grid.Row="10" Grid.ColumnSpan="2" Margin="0,14,0,12"
+                                  IsChecked="True" IsEnabled="False" Content="Сохранить текущие значения при перезапуске" />
+                        <TextBlock Grid.Row="11" Grid.ColumnSpan="2" Margin="0,8,0,16" Foreground="Gray"
+                                   Text="Эта вкладка пока является копией-заглушкой. Ее настройки и действие будут реализованы позже."
+                                   TextWrapping="Wrap" />
+                        <Button Grid.Row="12" Grid.ColumnSpan="2" Content="Построить теплый пол" IsEnabled="False" />
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+        <TextBlock x:Name="StatusText" Grid.Row="1" Margin="2,10,2,0" TextWrapping="Wrap" />
+    </Grid>
+</Window>

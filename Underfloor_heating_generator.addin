@@ -4,7 +4,7 @@
 
 		<!-- Базовая информация о приложении -->
 		<Name>Warm Floor Generator</Name>
-		<Assembly>C:\ProgramData\Autodesk\Revit\Addins\2024\Underfloor_heating_generator.dll</Assembly>
+		<Assembly>Underfloor_heating_generator.dll</Assembly>
 		<AddInId>087BC1BC-474A-4C79-B455-926D91B6EE10</AddInId>
 		<FullClassName>Underfloor_heating_generator.App</FullClassName>
 
@@ -23,7 +23,7 @@
 		</VendorDescription>
 
 		<!-- Настройки совместимости плагина -->
-		<MaximalRevitVersion>2024</MaximalRevitVersion>
+		<MaximalRevitVersion>2026</MaximalRevitVersion>
 
 	</AddIn>
 
