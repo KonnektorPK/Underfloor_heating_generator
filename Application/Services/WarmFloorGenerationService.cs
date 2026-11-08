@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using Underfloor_heating_generator.Application.Contracts;
@@ -22,7 +23,7 @@ namespace Underfloor_heating_generator.Application.Services
             this.pipeTypeService = pipeTypeService;
         }
 
-        public WorkflowResult Generate(WarmFloorRequest request)
+        public WorkflowResult Generate(WarmFloorRequest request, Action<int, int> progress = null)
         {
             if (request == null)
                 return WorkflowResult.Failure("Параметры построения не заданы.");
@@ -39,17 +40,22 @@ namespace Underfloor_heating_generator.Application.Services
 
             try
             {
-                var splines = dwgConverter.GetListVerticesFromDwg(drawing);
+                var splines = dwgConverter.GetListVerticesFromDwg(drawing, true,
+                    request.AlignDirectionsToAllowedAngles);
                 if (splines == null || splines.Count == 0)
                     return WorkflowResult.Failure("В выбранном DWG не найдены линии для построения труб.");
 
-                foreach (var spline in splines)
+                progress?.Invoke(0, splines.Count);
+                for (int i = 0; i < splines.Count; i++)
                 {
+                    IList<Autodesk.Revit.DB.XYZ> spline = splines[i];
                     if (!pipeTypeService.DrawPipes(spline, request.PipeDiameterMillimeters,
                         request.LayingHeightMillimeters, pipeType.Id, levelId, systemType.Id))
                     {
                         return WorkflowResult.Failure("Не удалось построить один или несколько контуров труб.");
                     }
+
+                    progress?.Invoke(i + 1, splines.Count);
                 }
 
                 return WorkflowResult.Success();

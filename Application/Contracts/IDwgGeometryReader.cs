@@ -6,6 +6,7 @@ namespace Underfloor_heating_generator.Application.Contracts
     public interface IDwgGeometryReader
     {
         ImportInstance GetDrawing(ElementId drawingId);
-        IList<IList<XYZ>> GetListVerticesFromDwg(ImportInstance drawing, bool flagRounding = true);
+        IList<IList<XYZ>> GetListVerticesFromDwg(ImportInstance drawing, bool flagRounding = true,
+            bool alignDirectionsToAllowedAngles = false);
     }
 }

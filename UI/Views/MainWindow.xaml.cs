@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using Underfloor_heating_generator.Application.Contracts;
 using Underfloor_heating_generator.Application.Models;
 using WpfComboBox = System.Windows.Controls.ComboBox;
@@ -84,9 +85,39 @@ namespace Underfloor_heating_generator.UI.Views
                 return;
             }
 
-            var request = new WarmFloorRequest(pipeType.Id, systemType.Id, drawing.Id, diameter, height);
-            WorkflowResult result = generator.Generate(request);
-            ShowStatus(result.Message, result.Succeeded);
+            var request = new WarmFloorRequest(pipeType.Id, systemType.Id, drawing.Id, diameter, height,
+                AlignDirectionsCheckBox.IsChecked == true);
+            ProgressPanel.Visibility = Visibility.Visible;
+            ContourProgressBar.Value = 0;
+            ProgressPercent.Text = "0%";
+            ProgressLabel.Text = "Создание контуров: 0%";
+            CreateWarmFloor.IsEnabled = false;
+            try
+            {
+                WorkflowResult result = generator.Generate(request, (completed, total) =>
+                {
+                    double percent = total > 0 ? 100.0 * completed / total : 0;
+                    int roundedPercent = (int)Math.Round(percent);
+                    ContourProgressBar.Value = percent;
+                    ProgressPercent.Text = roundedPercent.ToString(CultureInfo.CurrentCulture) + "%";
+                    ProgressLabel.Text = string.Format(CultureInfo.CurrentCulture,
+                        "Создание контуров: {0}% ({1}/{2})", roundedPercent, completed, total);
+                    PumpUiMessages();
+                });
+                ShowStatus(result.Message, result.Succeeded);
+            }
+            finally
+            {
+                CreateWarmFloor.IsEnabled = true;
+            }
+        }
+
+        private static void PumpUiMessages()
+        {
+            var frame = new DispatcherFrame();
+            Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background,
+                new Action(() => frame.Continue = false));
+            Dispatcher.PushFrame(frame);
         }
 
         private void ShowStatus(string message, bool succeeded)

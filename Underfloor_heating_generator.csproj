@@ -35,10 +35,11 @@
   </ItemGroup>
 
   <Target Name="CopyPluginArtifacts" AfterTargets="Build">
+    <Delete Files="$(TargetDir)WarmFloor.png;$(TargetDir)WarmFloor.ico" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\Underfloor_heating_generator.addin"
           DestinationFiles="$(TargetDir)Underfloor_heating_generator.addin" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\Resources\Icons\WarmFloor.png;$(MSBuildProjectDirectory)\Resources\Icons\WarmFloor.ico"
-          DestinationFolder="$(TargetDir)" />
+          DestinationFolder="$(TargetDir)icons" />
     <XmlPoke XmlInputPath="$(TargetDir)Underfloor_heating_generator.addin"
              Query="/RevitAddIns/AddIn/Assembly" Value="$(TargetPath)" />
   </Target>
