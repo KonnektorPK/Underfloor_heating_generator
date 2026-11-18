@@ -6,6 +6,12 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\Infrastructure\Geometry\RectangularSpiral.cs" Link="Production\RectangularSpiral.cs" />
     <Compile Include="..\..\Infrastructure\Revit\AreaPipeLayout.cs" Link="Production\AreaPipeLayout.cs" />
+    <Compile Include="..\..\Infrastructure\Revit\PerimeterSpiralCore.cs" Link="Production\PerimeterSpiralCore.cs" />
+    <Compile Include="..\..\Revit\PluginDependencyResolver.cs" Link="Production\PluginDependencyResolver.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Clipper2" Version="2.0.0" />
   </ItemGroup>
 </Project>

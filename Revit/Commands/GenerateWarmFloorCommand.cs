@@ -14,6 +14,8 @@ namespace Underfloor_heating_generator.Revit.Commands
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            PluginDependencyResolver.EnsureRegistered();
+
             if (activeWindow != null && activeWindow.IsVisible)
             {
                 activeWindow.Activate();

@@ -2,11 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using Underfloor_heating_generator.Infrastructure.Geometry;
 
 namespace Underfloor_heating_generator.Infrastructure.Revit
 {
-    // Grid-cell contour layout adapted from the supplied Dynamo double-spiral algorithm.
-    // A spanning tree over safe cells defines one non-crossing path around the whole zone.
+    // Prefer the tested perimeter-first counter-flow spiral for simple offset contours.
+    // Keep the safe-cell contour method as a fallback for concave, split, and holed regions.
     internal static class AreaPipeLayout
     {
         private const double MillimetersPerFoot = 304.8;
@@ -30,33 +31,73 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 boundaryLoops.Any(loop => loop == null || loop.Count < 3 || loop.Any(point => !IsFinite(point))))
                 return new List<XYZ>();
 
-            var layouts = new List<OrientationLayout>();
-            foreach (OrientationCandidate orientation in GetOrientationCandidates(boundaryLoops, spacingMillimeters))
+            List<OrientationCandidate> orientations = GetOrientationCandidates(boundaryLoops,
+                spacingMillimeters);
+            if (orientations.Count == 0)
+                return new List<XYZ>();
+
+            OrientationCandidate preferred = orientations
+                .OrderBy(candidate => OrientationDistance(candidate.Angle,
+                    DominantAngle(boundaryLoops)))
+                .ThenByDescending(candidate => candidate.BoundarySupport)
+                .First();
+            IList<XYZ> preferredPath = CreateForOrientation(boundaryLoops, spacingMillimeters,
+                edgeOffsetMillimeters, pipeDiameterMillimeters, levelElevationFeet,
+                layingHeightMillimeters, startConnection, startDirection, endConnection,
+                endDirection, preferred.Angle, out _, out double preferredEdgeExcess);
+            double allowedEdgeExcess = Math.Max(5.0, edgeOffsetMillimeters * 0.15);
+            if (preferredPath.Count > 0 && PathFollowsOrientation(preferredPath,
+                    preferred.Angle, spacingMillimeters) && preferredEdgeExcess <= allowedEdgeExcess)
+                return preferredPath;
+
+            // Only try alternate axes when the geometry cannot be routed on its primary
+            // wall-supported axis. Valid routes no longer pay for a full orientation sweep.
+            IList<XYZ> firstFallback = preferredPath;
+            foreach (OrientationCandidate orientation in orientations
+                         .Where(candidate => OrientationDistance(candidate.Angle, preferred.Angle) >
+                                             Math.PI / 360.0))
             {
                 IList<XYZ> candidate = CreateForOrientation(boundaryLoops, spacingMillimeters,
                     edgeOffsetMillimeters, pipeDiameterMillimeters, levelElevationFeet,
                     layingHeightMillimeters, startConnection, startDirection, endConnection,
-                    endDirection, orientation.Angle, out double coverage);
-                if (candidate.Count > 0)
-                    layouts.Add(new OrientationLayout(candidate, coverage, orientation.BoundarySupport));
+                    endDirection, orientation.Angle, out _, out double edgeExcess);
+                if (candidate.Count > 0 && firstFallback.Count == 0)
+                    firstFallback = candidate;
+                if (candidate.Count > 0 && PathFollowsOrientation(candidate,
+                        orientation.Angle, spacingMillimeters) && edgeExcess <= allowedEdgeExcess)
+                    return candidate;
             }
+            return firstFallback ?? new List<XYZ>();
+        }
 
-            if (layouts.Count == 0)
-                return new List<XYZ>();
-
-            OrientationLayout selected = layouts.OrderByDescending(layout => layout.Coverage)
-                .ThenByDescending(layout => layout.BoundarySupport)
-                .First();
-            return selected.Path;
+        private static bool PathFollowsOrientation(IList<XYZ> path, double orientation,
+            double spacingMillimeters)
+        {
+            if (path == null || path.Count < 2)
+                return false;
+            double minimumLength = 10.0;
+            for (int i = 0; i + 1 < path.Count; i++)
+            {
+                double dx = path[i + 1].X - path[i].X;
+                double dy = path[i + 1].Y - path[i].Y;
+                double length = Math.Sqrt(dx * dx + dy * dy) * MillimetersPerFoot;
+                if (length < minimumLength)
+                    continue;
+                double difference = OrientationDistance(Math.Atan2(dy, dx), orientation);
+                if (difference <= Math.PI / 90.0)
+                    return true;
+            }
+            return false;
         }
 
         private static IList<XYZ> CreateForOrientation(IList<IList<XYZ>> boundaryLoops,
             double spacingMillimeters, double edgeOffsetMillimeters, double pipeDiameterMillimeters,
             double levelElevationFeet, double layingHeightMillimeters,
             XYZ startConnection, XYZ startDirection, XYZ endConnection, XYZ endDirection,
-            double angle, out double overallCoverage)
+            double angle, out double overallCoverage, out double overallEdgeExcess)
         {
             overallCoverage = 0;
+            overallEdgeExcess = double.PositiveInfinity;
             var loops = boundaryLoops.Select(loop => CleanLoop(loop.Select(point => ToLocal(point, angle))))
                 .Where(loop => loop.Count >= 3).ToList();
             if (loops.Count == 0)
@@ -68,8 +109,12 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             var endDir = Normalize(ToLocalVector(endDirection, angle));
             double nominalOffset = Math.Max(0, edgeOffsetMillimeters);
             double[] offsetFactors = nominalOffset > Epsilon
-                ? new[] { 0.9, 1.0, 1.1 }
+                ? new[] { 1.0, 0.9, 1.1 }
                 : new[] { 1.0 };
+            double maximumPitchFactor = loops.Count == 1 && IsAxisAlignedRectangle(loops[0])
+                ? RectangularSpiral.MaximumPitchFactor
+                : 1.1;
+            double[] spacingFactors = { 1.0, 0.9, maximumPitchFactor };
             IList<XYZ> bestResult = new List<XYZ>();
             double bestCoverage = double.NegativeInfinity;
             double bestEdgeExcess = double.PositiveInfinity;
@@ -77,19 +122,23 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             double maximumWallOffset = nominalOffset > Epsilon ? nominalOffset * 1.15 : 15.0;
             double edgeExcessTolerance = Math.Max(5.0, nominalOffset * 0.05);
 
+            foreach (double spacingFactor in spacingFactors)
             foreach (double offsetFactor in offsetFactors)
             {
                 double edgeOffset = nominalOffset * offsetFactor;
                 double clearance = edgeOffset + pipeDiameterMillimeters / 2.0;
                 double allowedEdgeExcess = Math.Max(0, maximumWallOffset - edgeOffset);
-                IList<XYZ> candidate = TryCreateCandidate(loops, spacingMillimeters, edgeOffset,
+                double pitch = spacingMillimeters * spacingFactor;
+                IList<XYZ> candidate = TryCreateCandidate(loops, pitch, edgeOffset,
                     pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
                     startConnection, endConnection, start, startDir, end, endDir, angle,
-                    out double coverage, out double edgeExcess);
+                    out double coverage, out double edgeExcess, out bool usedRectangularSpiral,
+                    allowRectangularPitchAdjustment: spacingFactor == 1.0);
                 if (candidate.Count == 0)
                     continue;
 
-                double deviation = Math.Abs(edgeOffset - nominalOffset);
+                double deviation = Math.Abs(edgeOffset - nominalOffset) +
+                    Math.Abs(pitch - spacingMillimeters);
                 bool candidateWithinOffset = edgeExcess <= allowedEdgeExcess;
                 bool previousWithinOffset = bestEdgeExcess <= allowedEdgeExcess;
                 bool better;
@@ -120,9 +169,20 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     bestEdgeExcess = edgeExcess;
                     bestDeviation = deviation;
                 }
+
+                double largestGap = coverage > 0 ? (1.0 / coverage) - 1.0 :
+                    double.PositiveInfinity;
+                if (spacingFactor == 1.0 && offsetFactor == 1.0 &&
+                    candidateWithinOffset && (usedRectangularSpiral || largestGap <= pitch * 1.65))
+                {
+                    overallCoverage = coverage;
+                    overallEdgeExcess = edgeExcess;
+                    return candidate;
+                }
             }
 
             overallCoverage = bestCoverage;
+            overallEdgeExcess = bestEdgeExcess;
             return bestResult;
         }
 
@@ -327,65 +387,205 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             double levelElevationFeet, double layingHeightMillimeters,
             XYZ startConnection, XYZ endConnection, Point2 start, Point2 startDir,
             Point2 end, Point2 endDir, double angle,
-            out double coverage, out double edgeExcess)
+            out double coverage, out double edgeExcess, out bool usedRectangularSpiral,
+            bool allowPerimeterSpiral = true,
+            int boundaryJoinOrder = 0, bool forceBoundaryLap = false,
+            bool allowRectangularSpiral = true, bool allowRectangularPitchAdjustment = true)
         {
             coverage = 0;
             edgeExcess = double.PositiveInfinity;
+            usedRectangularSpiral = false;
             double clearance = edgeOffsetMillimeters + pipeDiameterMillimeters / 2.0;
             double pitch = spacingMillimeters;
 
-            List<GridCell> cells = BuildCells(loops, spacingMillimeters,
-                pipeDiameterMillimeters, clearance, out edgeExcess);
-            if (cells.Count == 0)
+            List<Point2> loopPath = null;
+            bool usedPerimeterSpiral = false;
+            bool usedBoundaryPrefix = false;
+            int perimeterLaps = 0;
+            List<Point2> outerBoundary = null;
+            List<Point2> boundaryLap = null;
+            Point2 leadOutward = default;
+            usedRectangularSpiral = allowRectangularSpiral && allowPerimeterSpiral && loops.Count == 1 &&
+                TryBuildRectangularSpiral(loops[0], start, end, startDir, endDir, clearance,
+                    pipeDiameterMillimeters, allowRectangularPitchAdjustment, ref pitch,
+                    out loopPath, out leadOutward);
+            if (usedRectangularSpiral)
+            {
+                usedPerimeterSpiral = true;
+                edgeExcess = 0;
+            }
+            else if (allowPerimeterSpiral && loops.Count == 1)
+            {
+                IReadOnlyList<PerimeterSpiralCore.Point> boundary = loops[0]
+                    .Select(point => new PerimeterSpiralCore.Point(point.X, point.Y)).ToList();
+                double openingLength = GetConnectionOpeningLength(start, end, pitch,
+                    pipeDiameterMillimeters);
+                if (PerimeterSpiralCore.TryBuild(new[] { boundary }, pitch, clearance,
+                        new PerimeterSpiralCore.Point((start.X + end.X) / 2.0,
+                            (start.Y + end.Y) / 2.0), openingLength,
+                        out List<PerimeterSpiralCore.Point> perimeterRoute))
+                {
+                    loopPath = perimeterRoute.Select(point => new Point2(point.X, point.Y)).ToList();
+                    usedPerimeterSpiral = true;
+                    edgeExcess = 0;
+                }
+            }
+
+            // Keep a single-loop area on the perimeter algorithm; do not silently
+            // switch this case to the legacy cell-grid route.
+            if (loops.Count == 1 && !usedPerimeterSpiral)
                 return new List<XYZ>();
 
-            GridCell entry = null;
-            int entrySide = -1;
-            double entryScore = double.PositiveInfinity;
-            foreach (GridCell cell in cells)
+            if (!usedPerimeterSpiral && (allowPerimeterSpiral || forceBoundaryLap))
             {
-                for (int side = 0; side < 4; side++)
+                outerBoundary = loops.Count == 1 ? loops[0] : FindSingleOuterBoundary(loops);
+                if (outerBoundary != null)
                 {
-                    Point2 normal = SideNormal(side);
-                    Point2 midpoint = SideMidpoint(cell, side);
-                    double edgeDepth = DistanceToBoundary(loops, midpoint);
-                    double facing = Dot(start - midpoint, normal);
-                    if (edgeDepth > clearance + spacingMillimeters * 1.1 || facing <= 0)
-                        continue;
-
-                    double score = midpoint.DistanceSquaredTo(start) - facing * 0.1;
-                    if (score < entryScore)
+                    IReadOnlyList<PerimeterSpiralCore.Point> boundary = outerBoundary
+                        .Select(point => new PerimeterSpiralCore.Point(point.X, point.Y)).ToList();
+                    double openingLength = GetConnectionOpeningLength(start, end, pitch,
+                        pipeDiameterMillimeters);
+                    if (PerimeterSpiralCore.TryBuildBoundaryBand(boundary, pitch, clearance,
+                            new PerimeterSpiralCore.Point((start.X + end.X) / 2.0,
+                                (start.Y + end.Y) / 2.0),
+                            openingLength, maximumLaps: 1,
+                            out List<PerimeterSpiralCore.Point> perimeterLap, out perimeterLaps))
                     {
-                        entry = cell;
-                        entrySide = side;
-                        entryScore = score;
+                        List<Point2> candidateLap = perimeterLap
+                            .Select(point => new Point2(point.X, point.Y)).ToList();
+                        bool candidateLapIsSafe = true;
+                        for (int segmentIndex = 0; segmentIndex + 1 < candidateLap.Count; segmentIndex++)
+                        {
+                            Point2 first = candidateLap[segmentIndex], second = candidateLap[segmentIndex + 1];
+                            if (IsSafeSegment(loops, first, second, clearance))
+                                continue;
+                            candidateLapIsSafe = false;
+                            break;
+                        }
+                        if (candidateLapIsSafe)
+                        {
+                            boundaryLap = candidateLap;
+                            usedBoundaryPrefix = true;
+                        }
                     }
                 }
             }
-            if (entry == null)
-                return new List<XYZ>();
 
-            BuildAdjacency(cells);
-            BuildSpanningTree(entry, loops, clearance, pitch);
-            HashSet<GridCell> component = GetTreeComponent(entry);
-            if (component.Count != cells.Count)
-                return new List<XYZ>();
+            if (!usedPerimeterSpiral)
+            {
+                List<GridCell> cells = BuildCells(loops, spacingMillimeters,
+                    pipeDiameterMillimeters, clearance, out edgeExcess, outerBoundary,
+                    usedBoundaryPrefix ? clearance + perimeterLaps * pitch : 0);
+                if (cells.Count == 0)
+                {
+                    if (usedBoundaryPrefix)
+                        return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
+                            pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                            startConnection, endConnection, start, startDir, end, endDir, angle,
+                            out coverage, out edgeExcess);
+                    return new List<XYZ>();
+                }
 
-            List<Point2> loopPath = TraceCellContour(entry, entrySide, component);
+                GridCell entry = null;
+                int entrySide = -1;
+                double entryScore = double.PositiveInfinity;
+                Point2 entryPreference = usedBoundaryPrefix ? boundaryLap[boundaryLap.Count - 1] : start;
+                foreach (GridCell cell in cells)
+                {
+                    for (int side = 0; side < 4; side++)
+                    {
+                        Point2 normal = SideNormal(side);
+                        Point2 midpoint = SideMidpoint(cell, side);
+                        double edgeDepth = DistanceToBoundary(loops, midpoint);
+                        double facing = Dot(entryPreference - midpoint, normal);
+                        double entryDepthLimit = clearance + spacingMillimeters *
+                            (usedBoundaryPrefix ? perimeterLaps + 2.5 : 1.1);
+                        if (edgeDepth > entryDepthLimit ||
+                            !usedBoundaryPrefix && facing <= 0)
+                            continue;
+
+                        double score = midpoint.DistanceSquaredTo(entryPreference) -
+                            (usedBoundaryPrefix ? 0 : facing * 0.1);
+                        if (score < entryScore)
+                        {
+                            entry = cell;
+                            entrySide = side;
+                            entryScore = score;
+                        }
+                    }
+                }
+                if (entry == null)
+                {
+                    if (usedBoundaryPrefix)
+                        return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
+                            pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                            startConnection, endConnection, start, startDir, end, endDir, angle,
+                            out coverage, out edgeExcess);
+                    return new List<XYZ>();
+                }
+                BuildAdjacency(cells);
+                BuildSpanningTree(entry, loops, clearance, pitch);
+                HashSet<GridCell> component = GetTreeComponent(entry);
+                if (component.Count != cells.Count)
+                {
+                    if (usedBoundaryPrefix)
+                        return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
+                            pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                            startConnection, endConnection, start, startDir, end, endDir, angle,
+                            out coverage, out edgeExcess);
+                    return new List<XYZ>();
+                }
+
+                loopPath = SimplifyCollinear(TraceCellContour(entry, entrySide, component));
+                if (usedBoundaryPrefix && loopPath != null)
+                {
+                    loopPath = JoinBoundaryLap(boundaryLap, loopPath, loops, clearance, pitch,
+                        boundaryJoinOrder, pitch * (perimeterLaps + 1.0));
+                    if (loopPath == null)
+                    {
+                        return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
+                            pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                            startConnection, endConnection, start, startDir, end, endDir, angle,
+                            out coverage, out edgeExcess);
+                    }
+                    edgeExcess = 0;
+                }
+            }
+
             if (loopPath == null || loopPath.Count < 2)
+            {
+                if (usedBoundaryPrefix)
+                    return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
+                        pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                        startConnection, endConnection, start, startDir, end, endDir, angle,
+                        out coverage, out edgeExcess);
                 return new List<XYZ>();
-            coverage = ComputeCoverageQuality(loops, loopPath, clearance, pitch);
-            edgeExcess = Math.Max(edgeExcess, ComputeBoundaryOffsetExcess(loops, loopPath,
-                edgeOffsetMillimeters, pipeDiameterMillimeters, pitch));
+            }
+            // The prototype is produced from exact inward polygon offsets and has already
+            // passed sampled clearance checks. The wall-parallel scanner misses short
+            // bevel fragments and was incorrectly forcing a full orientation sweep.
+            double baseEdgeExcess = usedPerimeterSpiral
+                ? 0
+                : Math.Max(edgeExcess, ComputeBoundaryOffsetExcess(loops, loopPath,
+                    edgeOffsetMillimeters, pipeDiameterMillimeters, pitch));
 
             List<Point2> bestPath = null;
             double bestScore = double.PositiveInfinity;
+            double bestBodyCoverage = 0;
+            double bestPathEdgeExcess = baseEdgeExcess;
             List<List<Point2>> innerLoops = GetInnerLoops(loops);
             for (int orientation = 0; orientation < 2; orientation++)
             {
                 List<Point2> orientedLoop = new List<Point2>(loopPath);
                 if (orientation == 1)
                     orientedLoop.Reverse();
+                if (!usedRectangularSpiral)
+                {
+                    if (!TryRoundLoop(orientedLoop, loops, clearance, pipeDiameterMillimeters,
+                            pitch, out List<Point2> roundedLoop))
+                        continue;
+                    orientedLoop = roundedLoop;
+                }
 
                 bool loopIsSafe = true;
                 for (int i = 0; i + 1 < orientedLoop.Count; i++)
@@ -396,16 +596,23 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     break;
                 }
                 if (!loopIsSafe)
+                {
                     continue;
+                }
 
                 Point2 loopStart = orientedLoop[0];
                 Point2 loopEnd = orientedLoop[orientedLoop.Count - 1];
+                double bodyCoverage = ComputeCoverageQuality(loops, orientedLoop, clearance, pitch);
+                double bodyEdgeExcess = usedPerimeterSpiral
+                    ? baseEdgeExcess
+                    : Math.Max(baseEdgeExcess, ComputeBoundaryOffsetExcess(loops,
+                        orientedLoop, edgeOffsetMillimeters, pipeDiameterMillimeters, pitch));
                 List<List<Point2>> startRoutes = BuildConnectorRoutes(loopStart, start,
                     startDir, orientedLoop, atStart: true, innerLoops, clearance,
-                    pipeDiameterMillimeters, pitch);
+                    pipeDiameterMillimeters, pitch, leadOutward);
                 List<List<Point2>> endRoutes = BuildConnectorRoutes(loopEnd, end,
                     endDir, orientedLoop, atStart: false, innerLoops, clearance,
-                    pipeDiameterMillimeters, pitch);
+                    pipeDiameterMillimeters, pitch, leadOutward);
                 foreach (List<Point2> fromStart in startRoutes)
                 foreach (List<Point2> toEnd in endRoutes)
                 {
@@ -421,21 +628,65 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                         candidate.Zip(candidate.Skip(1), (first, second) => first.DistanceTo(second))
                             .Any(length => length < 0.1 * 25.4))
                         continue;
-                    int crossings = CountCrossings(candidate);
-                    if (crossings > 0)
+                    double leadClearance = pipeDiameterMillimeters + 2.0;
+                    if (!LeadsHaveClearance(fromStart, toEnd, leadClearance))
+                    {
                         continue;
+                    }
 
                     double score = PolylineLength(fromStart) + PolylineLength(toEnd) + candidate.Count;
-                    if (score < bestScore)
+                    if (score < bestScore && PerimeterSpiralCore.HasRoomBetweenRuns(
+                        candidate.Select(point => new PerimeterSpiralCore.Point(point.X, point.Y)).ToList(),
+                        pitch, leadClearance))
                     {
                         bestScore = score;
                         bestPath = candidate;
+                        bestBodyCoverage = bodyCoverage;
+                        bestPathEdgeExcess = bodyEdgeExcess;
                     }
                 }
             }
 
-            if (bestPath == null || CountCrossings(bestPath) > 0)
+            if (bestPath == null && usedRectangularSpiral)
+            {
+                return TryCreateCandidate(loops, spacingMillimeters, edgeOffsetMillimeters, pipeDiameterMillimeters,
+                    levelElevationFeet, layingHeightMillimeters, startConnection, endConnection,
+                    start, startDir, end, endDir, angle, out coverage, out edgeExcess, out usedRectangularSpiral,
+                    allowRectangularSpiral: Math.Abs(pitch - spacingMillimeters) > Epsilon,
+                    allowRectangularPitchAdjustment: false);
+            }
+
+            if ((bestPath == null || CountCrossings(bestPath) > 0) && usedBoundaryPrefix &&
+                boundaryJoinOrder == 0)
+            {
+                return TryCreateCandidate(loops, spacingMillimeters, edgeOffsetMillimeters,
+                    pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                    startConnection, endConnection, start, startDir, end, endDir, angle,
+                            out coverage, out edgeExcess, out usedRectangularSpiral,
+                            allowPerimeterSpiral, boundaryJoinOrder: 1,
+                            forceBoundaryLap);
+            }
+
+            if ((bestPath == null || CountCrossings(bestPath) > 0) && usedBoundaryPrefix)
+            {
+                return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
+                    pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                    startConnection, endConnection, start, startDir, end, endDir, angle,
+                    out coverage, out edgeExcess);
+            }
+
+            if ((bestPath == null || CountCrossings(bestPath) > 0) && usedPerimeterSpiral)
+            {
                 return new List<XYZ>();
+            }
+
+            if (bestPath == null || CountCrossings(bestPath) > 0)
+            {
+                return new List<XYZ>();
+            }
+
+            coverage = bestBodyCoverage;
+            edgeExcess = bestPathEdgeExcess;
 
             double heightOffsetFeet = layingHeightMillimeters / MillimetersPerFoot;
             var result = new List<XYZ>(bestPath.Count);
@@ -453,9 +704,187 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             return result;
         }
 
+        private static bool TryBuildRectangularSpiral(IList<Point2> loop, Point2 start, Point2 end,
+            Point2 startDir, Point2 endDir, double clearance, double diameter, bool adjustPitch, ref double pitch,
+            out List<Point2> path, out Point2 outward)
+        {
+            path = null;
+            outward = default;
+            if (!IsAxisAlignedRectangle(loop) || pitch <= diameter || pitch < 2 * 2.54)
+                return false;
+
+            Point2 center = new Point2(loop.Average(p => p.X), loop.Average(p => p.Y));
+            Point2 portCenter = (start + end) / 2;
+            var axes = new[] { new Point2(1, 0), new Point2(0, 1), new Point2(-1, 0), new Point2(0, -1) };
+            foreach (Point2 normal in axes)
+            {
+                double wall = loop.Max(p => Dot(p, normal));
+                double right = wall - clearance;
+                if (Dot(start, normal) < right || Dot(end, normal) < right ||
+                    Dot(startDir, normal) > -0.99999 || Dot(endDir, normal) > -0.99999)
+                    continue;
+
+                Point2 tangent = new Point2(-normal.Y, normal.X);
+                if (Dot(portCenter - center, tangent) < 0)
+                    tangent = tangent * -1;
+                double left = loop.Min(p => Dot(p, normal)) + clearance;
+                double bottom = loop.Min(p => Dot(p, tangent)) + clearance;
+                double width = right - left;
+                double height = loop.Max(p => Dot(p, tangent)) - clearance - bottom;
+                double selectedPitch = adjustPitch
+                    ? RectangularSpiral.SelectRoomPitch(width, height, pitch, diameter)
+                    : pitch;
+                int turns = RectangularSpiral.CountRoomTurns(width, height, selectedPitch);
+                if (turns == 0)
+                    return false;
+                pitch = selectedPitch;
+
+                double maximumEntryHeight = height > 5 * pitch + 5.08
+                    ? height - 4 * pitch - 5.08
+                    : height - pitch;
+                double entryHeight = Math.Clamp(Dot(portCenter, tangent) - bottom - pitch / 2,
+                    pitch, maximumEntryHeight);
+                double innerWidth = width - 4 * pitch * turns - diameter;
+                double innerHeight = height - (4 * turns - 2) * pitch - diameter;
+                float traceWidth = (float)diameter;
+                float gap = (float)(pitch - diameter);
+                // The geometry uses PointF in local coordinates; allow a small rounding
+                // margin at the minimum inner width.
+                float clearWidth = Math.Max(gap, (float)innerWidth);
+                path = RectangularSpiral.GenerateRoomSpiral(turns, traceWidth, gap,
+                        clearWidth, (float)innerHeight, entryHeight)
+                    .Select(p => normal * (left + p.X) + tangent * (bottom + p.Y)).ToList();
+                outward = normal;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool IsAxisAlignedRectangle(IList<Point2> loop)
+        {
+            if (loop.Count != 4)
+                return false;
+            double minX = loop.Min(p => p.X), maxX = loop.Max(p => p.X);
+            double minY = loop.Min(p => p.Y), maxY = loop.Max(p => p.Y);
+            const double tolerance = 0.05;
+            return loop.All(p => Math.Min(p.X - minX, maxX - p.X) <= tolerance &&
+                                 Math.Min(p.Y - minY, maxY - p.Y) <= tolerance);
+        }
+
+        private static bool TryRoundLoop(IList<Point2> source, IList<List<Point2>> loops,
+            double clearance, double pipeDiameter, double pitch, out List<Point2> rounded)
+        {
+            rounded = null;
+            double requestedRadius = Math.Min(pitch * 0.2, pipeDiameter * 2.0);
+            double minimumRadius = Math.Max(6.0, pipeDiameter * 0.5);
+            double[] radiusFactors = { 1.0, 0.75, 0.5 };
+            foreach (double factor in radiusFactors)
+            {
+                double radius = requestedRadius * factor;
+                if (radius < minimumRadius - 1e-6 ||
+                    !PerimeterSpiralCore.TryRoundPolyline(source.Select(point =>
+                            new PerimeterSpiralCore.Point(point.X, point.Y)).ToList(),
+                        radius, 20.0, closed: false, out List<PerimeterSpiralCore.Point> candidate))
+                    continue;
+
+                List<Point2> localCandidate = candidate.Select(point =>
+                    new Point2(point.X, point.Y)).ToList();
+                if (localCandidate.Zip(localCandidate.Skip(1), (first, second) =>
+                        IsSafeSegment(loops, first, second, clearance)).Any(isSafe => !isSafe) ||
+                    CountCrossings(localCandidate) > 0)
+                    continue;
+
+                rounded = localCandidate;
+                return true;
+            }
+            return false;
+        }
+
+        private static IList<XYZ> RetryWithoutPerimeterPrefix(IList<List<Point2>> loops,
+            double spacingMillimeters, double edgeOffsetMillimeters, double pipeDiameterMillimeters,
+            double levelElevationFeet, double layingHeightMillimeters,
+            XYZ startConnection, XYZ endConnection, Point2 start, Point2 startDir,
+            Point2 end, Point2 endDir, double angle, out double coverage, out double edgeExcess)
+        {
+            return TryCreateCandidate(loops, spacingMillimeters, edgeOffsetMillimeters,
+                pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                startConnection, endConnection, start, startDir, end, endDir, angle,
+                out coverage, out edgeExcess, out _, allowPerimeterSpiral: false);
+        }
+
+        private static double GetConnectionOpeningLength(Point2 start, Point2 end,
+            double pitch, double pipeDiameter)
+        {
+            double connectionSeparation = start.DistanceTo(end);
+            // The wall opening only needs enough room for the perimeter-to-field bridge.
+            // Port separation is handled by independent, collision-checked lead routes;
+            // letting it widen this opening leaves a cold strip along the outer wall.
+            double cornerAllowance = connectionSeparation < pitch * 2.0 ? pitch : 0;
+            double required = connectionSeparation + pipeDiameter * 2.0 + cornerAllowance;
+            return Math.Max(pitch * 1.5, Math.Min(required, pitch * 2.5));
+        }
+
+        private static List<Point2> FindSingleOuterBoundary(IList<List<Point2>> loops)
+        {
+            if (loops == null || loops.Count < 2)
+                return null;
+            List<Point2> outer = loops.OrderByDescending(loop => Math.Abs(SignedArea(loop))).FirstOrDefault();
+            if (outer == null || loops.Any(loop => !ReferenceEquals(loop, outer) &&
+                                                   !IsPointInsideLoop(outer, loop[0])))
+                return null;
+            return outer;
+        }
+
+        private static double SignedArea(IList<Point2> loop)
+        {
+            double twiceArea = 0;
+            for (int i = 0; i < loop.Count; i++)
+                twiceArea += Cross(loop[i], loop[(i + 1) % loop.Count]);
+            return twiceArea * 0.5;
+        }
+
+        private static List<Point2> JoinBoundaryLap(IList<Point2> boundaryLap,
+            IList<Point2> interiorPath, IList<List<Point2>> loops, double clearance,
+            double pitch, int preferredReverse, double maximumJoinDistance)
+        {
+            if (boundaryLap == null || boundaryLap.Count < 3 || interiorPath == null || interiorPath.Count < 2)
+                return null;
+
+            foreach (int reverse in new[] { preferredReverse, 1 - preferredReverse })
+            {
+                var candidate = new List<Point2>(boundaryLap);
+                Point2 joinStart = boundaryLap[boundaryLap.Count - 1];
+                Point2 interiorStart = reverse == 0 ? interiorPath[0] : interiorPath[interiorPath.Count - 1];
+                double joinDistance = joinStart.DistanceTo(interiorStart);
+                bool joinIsSafe = IsSafeSegment(loops, joinStart, interiorStart, clearance);
+                if (joinDistance > Math.Max(pitch * 2.5, maximumJoinDistance) || !joinIsSafe)
+                    continue;
+
+                AddDistinct(candidate, interiorStart);
+                if (reverse == 0)
+                {
+                    for (int i = 1; i < interiorPath.Count; i++)
+                        AddDistinct(candidate, interiorPath[i]);
+                }
+                else
+                {
+                    for (int i = interiorPath.Count - 2; i >= 0; i--)
+                        AddDistinct(candidate, interiorPath[i]);
+                }
+
+                int crossings = CountCrossings(candidate);
+                bool shortSegment = candidate.Zip(candidate.Skip(1), (first, second) => first.DistanceTo(second))
+                    .Any(length => length < 0.1 * 25.4);
+                if (candidate.Count < 4 || crossings > 0 || shortSegment)
+                    continue;
+                return candidate;
+            }
+            return null;
+        }
+
         private static List<List<Point2>> BuildConnectorRoutes(Point2 pipePoint, Point2 connection,
             Point2 connectionDirection, IList<Point2> coilPath, bool atStart, IList<List<Point2>> innerLoops,
-            double clearance, double pipeDiameter, double pitch)
+            double clearance, double pipeDiameter, double pitch, Point2 leadOutward = default)
         {
             double minX = coilPath.Min(point => point.X);
             double maxX = coilPath.Max(point => point.X);
@@ -465,6 +894,21 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             double laneStep = Math.Max(30.0, Math.Min(pitch * 0.5, 100.0));
             Point2 approach = connection + Normalize(connectionDirection) * Math.Max(25.0, pipeDiameter * 2.0);
             var candidates = new List<List<Point2>>();
+
+            if (leadOutward.Length > Epsilon)
+            {
+                Point2 leadNormal = new Point2(-leadOutward.Y, leadOutward.X);
+                double across = Dot(approach - pipePoint, leadNormal);
+                double along = Dot(approach - pipePoint, leadOutward);
+                double chamfer = Math.Abs(across);
+                if (chamfer > 0.1 && along > chamfer)
+                {
+                    // Use a 45-degree shift with straight stubs on both sides.
+                    Point2 bend = pipePoint + leadOutward * ((along - chamfer) / 2);
+                    AddRoute(new[] { pipePoint, bend, bend + leadOutward * chamfer + leadNormal * across,
+                        approach, connection });
+                }
+            }
 
             AddRoute(new[] { pipePoint, approach, connection });
             AddRoute(new[] { pipePoint, new Point2(pipePoint.X, approach.Y), approach, connection });
@@ -486,7 +930,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     new Point2(right, approach.Y), approach, connection });
             }
 
-            return candidates
+            List<List<Point2>> orderedCandidates = candidates
                 .OrderBy(PolylineLength)
                 .Take(12)
                 .ToList();
@@ -499,6 +943,18 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 if (route.Count < 2 || route.Zip(route.Skip(1),
                         (first, second) => first.DistanceTo(second)).Any(length => length < 0.1 * 25.4))
                     return;
+                if (leadOutward.Length > Epsilon)
+                {
+                    if (route.Any(point => Dot(point - pipePoint, leadOutward) < -0.05))
+                        return;
+                    for (int i = 0; i + 1 < route.Count; i++)
+                    {
+                        Point2 delta = route[i + 1] - route[i];
+                        double x = Math.Abs(delta.X), y = Math.Abs(delta.Y);
+                        if (Math.Min(x, y) > 0.05 && Math.Abs(x - y) > 0.05)
+                            return;
+                    }
+                }
                 Point2 connectorSegment = route[route.Count - 1] - route[route.Count - 2];
                 if (Math.Abs(Dot(Normalize(connectorSegment), Normalize(connectionDirection))) < 0.7)
                     return;
@@ -511,6 +967,8 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     return;
                 candidates.Add(route);
             }
+
+            return orderedCandidates;
         }
 
         private static bool IsConnectorClearOfCoil(IList<Point2> route, IList<Point2> coilPath,
@@ -530,7 +988,8 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
         }
 
         private static List<GridCell> BuildCells(IList<List<Point2>> loops,
-            double nominalPitch, double pipeDiameter, double clearance, out double edgeExcess)
+            double nominalPitch, double pipeDiameter, double clearance, out double edgeExcess,
+            List<Point2> outerBandBoundary = null, double outerBandClearance = 0)
         {
             edgeExcess = double.PositiveInfinity;
             double minX = loops.SelectMany(loop => loop).Min(point => point.X);
@@ -548,6 +1007,9 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
 
             var result = new List<GridCell>();
             var byKey = new Dictionary<CellKey, GridCell>();
+            List<List<Point2>> outerBoundaryOnly = outerBandBoundary == null
+                ? null
+                : new List<List<Point2>> { outerBandBoundary };
 
             for (int row = 0; row < rows.Count; row++)
             {
@@ -556,7 +1018,8 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     AxisCellRange xRange = columns[column];
                     AxisCellRange yRange = rows[row];
                     var cell = new GridCell(column, row, xRange.Min, yRange.Min, xRange.Max, yRange.Max);
-                    if (!IsCellSafe(cell, loops, clearance))
+                    if (!IsCellSafe(cell, loops, clearance) ||
+                        outerBoundaryOnly != null && !IsCellSafe(cell, outerBoundaryOnly, outerBandClearance))
                         continue;
                     cell.Id = result.Count;
                     result.Add(cell);
@@ -573,12 +1036,16 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 byKey.TryGetValue(new CellKey(cell.Column - 1, cell.Row), out GridCell left);
                 byKey.TryGetValue(new CellKey(cell.Column, cell.Row + 1), out GridCell up);
                 byKey.TryGetValue(new CellKey(cell.Column, cell.Row - 1), out GridCell down);
-                if (right != null && IsConnectorSafe(cell, right, loops, clearance, horizontal: true))
+                if (right != null && IsConnectorSafe(cell, right, loops, clearance, horizontal: true) &&
+                    (outerBoundaryOnly == null || IsConnectorSafe(cell, right, outerBoundaryOnly,
+                        outerBandClearance, horizontal: true)))
                 {
                     cell.Right = right;
                     right.Left = cell;
                 }
-                if (up != null && IsConnectorSafe(cell, up, loops, clearance, horizontal: false))
+                if (up != null && IsConnectorSafe(cell, up, loops, clearance, horizontal: false) &&
+                    (outerBoundaryOnly == null || IsConnectorSafe(cell, up, outerBoundaryOnly,
+                        outerBandClearance, horizontal: false)))
                 {
                     cell.Up = up;
                     up.Down = cell;
@@ -752,6 +1219,29 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             return path;
         }
 
+        private static List<Point2> SimplifyCollinear(IList<Point2> source)
+        {
+            var result = source?.ToList() ?? new List<Point2>();
+            double angularTolerance = Math.Sin(0.5 * Math.PI / 180.0);
+            for (int index = 1; index + 1 < result.Count;)
+            {
+                Point2 incoming = result[index] - result[index - 1];
+                Point2 outgoing = result[index + 1] - result[index];
+                double product = incoming.Length * outgoing.Length;
+                if (product > Epsilon && Dot(incoming, outgoing) > 0 &&
+                    Math.Abs(Cross(incoming, outgoing)) <= angularTolerance * product)
+                {
+                    result.RemoveAt(index);
+                    index = Math.Max(1, index - 1);
+                }
+                else
+                {
+                    index++;
+                }
+            }
+            return result;
+        }
+
         private static bool IsTreeEdge(GridCell first, GridCell second) =>
             first != null && second != null && (first.Parent == second || second.Parent == first);
 
@@ -782,7 +1272,10 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
         private static bool IsSafeSegment(IList<List<Point2>> loops, Point2 start, Point2 end,
             double clearance)
         {
-            double minimumDistanceSquared = clearance * clearance;
+            // Clipper stores offsets at fixed 0.001 mm precision. Leave a small
+            // numerical tolerance so an exactly-on-offset segment is not rejected.
+            double validatedClearance = Math.Max(0, clearance - 0.25);
+            double minimumDistanceSquared = validatedClearance * validatedClearance;
             foreach (List<Point2> loop in loops)
             {
                 for (int i = 0; i < loop.Count; i++)
@@ -791,7 +1284,9 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     Point2 boundaryEnd = loop[(i + 1) % loop.Count];
                     if (SegmentDistanceSquared(start, end, boundaryStart, boundaryEnd) <
                         minimumDistanceSquared - 1e-6)
+                    {
                         return false;
+                    }
                 }
             }
 
@@ -800,8 +1295,10 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             {
                 double t = (double)i / steps;
                 Point2 point = start + (end - start) * t;
-                if (!IsSafePoint(loops, point, clearance))
+                if (!IsSafePoint(loops, point, validatedClearance))
+                {
                     return false;
+                }
             }
             return true;
         }
@@ -847,6 +1344,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             IList<Point2> path, double edgeOffset, double pipeDiameter, double pitch)
         {
             double maximumExtra = 0;
+            int missingWalls = 0;
             double minimumWallLength = Math.Max(300.0, pitch * 2.0);
             double parallelTolerance = Math.Sin(2.0 * Math.PI / 180.0);
             foreach (List<Point2> loop in loops)
@@ -884,14 +1382,16 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     nearestDistance = Math.Min(nearestDistance, distance);
                 }
 
-                if (double.IsFinite(nearestDistance))
+                if (!double.IsFinite(nearestDistance))
                 {
-                    double wallGap = nearestDistance - pipeDiameter / 2.0;
-                    maximumExtra = Math.Max(maximumExtra, wallGap - edgeOffset);
+                    missingWalls++;
+                    continue;
                 }
+                double wallGap = nearestDistance - pipeDiameter / 2.0;
+                maximumExtra = Math.Max(maximumExtra, wallGap - edgeOffset);
             }
 
-            return maximumExtra;
+            return maximumExtra + missingWalls * Math.Max(10000.0, pitch * 100.0);
         }
 
         private static double ComputeCoverageQuality(IList<List<Point2>> loops,
@@ -952,7 +1452,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     minDistanceSquared = Math.Min(minDistanceSquared, DistanceToSegmentSquared(point, a, b));
                 }
             }
-            return inside && minDistanceSquared >= clearance * clearance;
+            return inside && minDistanceSquared >= clearance * clearance - 1e-6;
         }
 
         private static double DistanceToBoundary(IList<List<Point2>> loops, Point2 point)
@@ -1067,6 +1567,18 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             return count;
         }
 
+        private static bool LeadsHaveClearance(IList<Point2> first, IList<Point2> second,
+            double minimumSeparation)
+        {
+            double minimumSquared = minimumSeparation * minimumSeparation;
+            for (int i = 0; i + 1 < first.Count; i++)
+            for (int j = 0; j + 1 < second.Count; j++)
+                if (SegmentDistanceSquared(first[i], first[i + 1], second[j], second[j + 1]) <
+                    minimumSquared)
+                    return false;
+            return true;
+        }
+
         private static bool SegmentsCross(Point2 a, Point2 b, Point2 c, Point2 d)
         {
             double abC = Cross(b - a, c - a);
@@ -1151,15 +1663,18 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
 
         private sealed class OrientationLayout
         {
-            public OrientationLayout(IList<XYZ> path, double coverage, double boundarySupport)
+            public OrientationLayout(IList<XYZ> path, double coverage, double boundarySupport,
+                double edgeExcess)
             {
                 Path = path;
                 Coverage = coverage;
                 BoundarySupport = boundarySupport;
+                EdgeExcess = edgeExcess;
             }
             public IList<XYZ> Path { get; }
             public double Coverage { get; }
             public double BoundarySupport { get; }
+            public double EdgeExcess { get; }
         }
 
         private sealed class AngleBin

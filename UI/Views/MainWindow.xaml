@@ -4,7 +4,8 @@
         Title="Генератор теплого пола" Height="600" Width="540"
         MinHeight="540" MinWidth="500" ResizeMode="CanMinimize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Closing="MainWindow_Closing"
-        Icon="pack://application:,,,/Underfloor_heating_generator;component/Resources/Icons/WarmFloor.ico">
+        Icon="../../Resources/Icons/WarmFloor.ico">
+    <!-- Resolve window resources relative to the versioned XAML URI. -->
     <Window.Resources>
         <Style TargetType="TextBlock">
             <Setter Property="Margin" Value="0,8,0,4" />

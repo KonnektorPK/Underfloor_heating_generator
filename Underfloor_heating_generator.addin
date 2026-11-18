@@ -26,5 +26,9 @@
 		<MaximalRevitVersion>2026</MaximalRevitVersion>
 
 	</AddIn>
+	<ManifestSettings>
+		<UseRevitContext>False</UseRevitContext>
+		<ContextName>UnderfloorHeatingGenerator</ContextName>
+	</ManifestSettings>
 
 </RevitAddIns>

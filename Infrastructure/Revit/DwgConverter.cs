@@ -377,12 +377,13 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             Line unbound1 = Line.CreateUnbound(ray1.Origin, ray1.Direction);
             Line unbound2 = Line.CreateUnbound(ray2.Origin, ray2.Direction);
 
-            IntersectionResultArray results;
-            SetComparisonResult result = unbound1.Intersect(unbound2, out results);
+            CurveIntersectResult result = unbound1.Intersect(unbound2,
+                CurveIntersectResultOption.Detailed);
+            IList<CurveOverlapPoint> overlaps = result?.GetOverlaps();
 
-            if (result == SetComparisonResult.Overlap && results != null && results.Size > 0)
+            if (result?.Result == SetComparisonResult.Overlap && overlaps != null && overlaps.Count > 0)
             {
-                return results.get_Item(0).XYZPoint;
+                return overlaps[0].Point;
             }
 
             return null;

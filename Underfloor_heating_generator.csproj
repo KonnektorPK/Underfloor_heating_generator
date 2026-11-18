@@ -5,9 +5,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <OutputType>Library</OutputType>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <RootNamespace>Underfloor_heating_generator</RootNamespace>
     <AssemblyName>Underfloor_heating_generator</AssemblyName>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Version>1.0.3</Version>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <Copyright>Copyright © 2026</Copyright>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
@@ -35,13 +38,15 @@
     <Resource Include="Resources\Icons\WarmFloor.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Clipper2" Version="2.0.0" />
+  </ItemGroup>
+
   <Target Name="CopyPluginArtifacts" AfterTargets="Build">
     <Delete Files="$(TargetDir)WarmFloor.png;$(TargetDir)WarmFloor.ico" />
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\Underfloor_heating_generator.addin"
-          DestinationFiles="$(TargetDir)Underfloor_heating_generator.addin" />
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\Resources\Icons\WarmFloor.png;$(MSBuildProjectDirectory)\Resources\Icons\WarmFloor.ico"
-          DestinationFolder="$(TargetDir)icons" />
-    <XmlPoke XmlInputPath="$(TargetDir)Underfloor_heating_generator.addin"
-             Query="/RevitAddIns/AddIn/Assembly" Value="$(TargetPath)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\Underfloor_heating_generator.addin" DestinationFiles="$(TargetDir)Underfloor_heating_generator.addin" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\Resources\Icons\WarmFloor.png;$(MSBuildProjectDirectory)\Resources\Icons\WarmFloor.ico" DestinationFolder="$(TargetDir)icons" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(NuGetPackageRoot)clipper2\2.0.0\lib\netstandard2.0\Clipper2Lib.dll" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    <XmlPoke XmlInputPath="$(TargetDir)Underfloor_heating_generator.addin" Query="/RevitAddIns/AddIn/Assembly" Value="$(TargetPath)" />
   </Target>
 </Project>
