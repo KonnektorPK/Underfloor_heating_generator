@@ -1,15 +1,71 @@
 using Autodesk.Revit.DB;
 using System.Reflection;
+using Underfloor_heating_generator.Application.Models;
+using Underfloor_heating_generator.Infrastructure.Geometry;
 using Underfloor_heating_generator.Infrastructure.Revit;
 
 const double MmPerFoot = 304.8;
 const double Pitch = 150;
 const double WallOffset = 100;
 const double Diameter = 16;
-const double RequiredCenterlineClearance = WallOffset * 0.9 + Diameter / 2.0 - 2.0;
+const double WallMeasurementTolerance = 0.02;
 
 var checks = new List<(string Name, Func<bool> Run)>
 {
+    ("circuit limits require exactly one complete mode", CheckCircuitLimits),
+    ("spatial buckets preserve exact coverage distances", CheckSegmentBuckets),
+    ("sampled bends become one tangent elbow vertex", CheckSingleElbowVertices),
+    ("real heating coils send the turns to Revit as single elbow vertices", CheckGeneratedElbows),
+    ("screenshot with three wall recesses at 10 mm per pixel", () => CheckRecessedScreenshot(10)),
+    ("screenshot with three wall recesses at 12 mm per pixel", () => CheckRecessedScreenshot(12)),
+    ("screenshot with three wall recesses at 15 mm per pixel", () => CheckRecessedScreenshot(15)),
+    ("screenshot with three wall recesses rotated 27 degrees", () => CheckRecessedScreenshot(12, 27)),
+    ("long runs keep their pitch near a stepped wall", CheckSteppedWallPitch),
+    ("one circuit uses the selected pipe and adds a return", () =>
+        CheckCircuitPlan("single circuit", new FloorCircuitLimits(null, null, 50), 1)),
+    ("area limit divides the floor into four circuits on the same side", () =>
+        CheckCircuitPlan("area circuits", new FloorCircuitLimits(null, null, 12), 4)),
+    ("exact circuit area limit works when the pipe is on a split line", () =>
+        CheckCircuitPlan("area circuits at seam", new FloorCircuitLimits(null, null, 10.85), 4,
+            startY: 3100)),
+    ("circuit length limit includes collector distance in both directions", () =>
+        CheckCircuitPlan("length circuits", new FloorCircuitLimits(12, 100, null), 4)),
+    ("circuit length without a collector run needs fewer loops", () =>
+        CheckCircuitPlan("length circuits without reserve", new FloorCircuitLimits(0, 100, null), 3)),
+    ("rotated circuits with an opening use net area", () =>
+        CheckCircuitPlan("rotated circuits", new FloorCircuitLimits(null, null, 24), 2, withHole: true)),
+    ("circuits leave the wall without crossing an opening on the lead side", () =>
+        CheckCircuitPlan("opening beside the leads", new FloorCircuitLimits(null, null, 12), 4,
+            openingNearOutlet: true)),
+    ("rotated circuits can route around two openings", () =>
+        CheckCircuitPlan("two rotated openings", new FloorCircuitLimits(null, null, 12), 4,
+            withHole: true, openingNearOutlet: true)),
+    ("five circuits from the screenshot cover the full width and have separate 150 mm outlets", () =>
+        CheckCircuitPlan("right-side outlet from screenshot", new FloorCircuitLimits(null, null, 17), 5,
+            startY: 7750, width: 9886, height: 8330, right: true, connectorDistance: 1320,
+            checkCoverage: true)),
+    ("circuits of 20 mm have 150 mm outlets at a 200 mm laying pitch", () =>
+        CheckCircuitPlan("20 mm tubes, 200 mm laying pitch", new FloorCircuitLimits(null, null, 12), 4,
+            diameter: 20, pitch: 200)),
+    ("circuits build when the selected pipe is just outside the wall", () =>
+        CheckCircuitPlan("short selected pipe", new FloorCircuitLimits(null, null, 12), 4,
+            startY: 3100, connectorDistance: 16)),
+    ("circuit at the end of the pipe on the wall builds with a 10 m² limit", () =>
+        CheckCircuitPlan("screenshot rectangle with one circuit", new FloorCircuitLimits(null, null, 10), 1,
+            startY: 2150, width: 3200, height: 2700, right: true, connectorDistance: 0)),
+    ("circuits split a rectangle with a pipe on the wall and a 10 m² limit", () =>
+        CheckCircuitPlan("screenshot rectangle split into two circuits", new FloorCircuitLimits(null, null, 10), 2,
+            startY: 2880, width: 4200, height: 3550, right: true, connectorDistance: 0)),
+    ("circuits in a room with a chamfer have separate outlet pairs", () =>
+        CheckCircuitPlan("chamfered room outlet", new FloorCircuitLimits(null, null, 12), 4,
+            chamfer: true)),
+    ("circuits in a recessed room have separate outlet pairs", () =>
+        CheckCircuitPlan("recessed room outlet", new FloorCircuitLimits(null, null, 12), 3,
+            recessed: true)),
+    ("circuits with no room to turn fail without partial paths", () =>
+        FloorCircuitLayout.Build(new[] { Rect(0, 0, 225, 800) }, FromMillimeters(-80, 400),
+            new XYZ(1, 0, 0), Pitch, WallOffset, Diameter, 0, -77, new FloorCircuitLimits(null, null, 12))
+            .Count == 0),
     ("prototype perimeter spiral on rectangle", () => CheckPerimeterPrototype("prototype rectangle",
         new[] { Rect(0, 0, 6000, 4000) })),
     ("Clipper2 resolves from beside the plugin assembly", CheckSideBySideClipperResolution),
@@ -58,7 +114,7 @@ var checks = new List<(string Name, Func<bool> Run)>
     ("prototype cleanly rejects a U-shaped room for production fallback", () => CheckPrototypeRejects("prototype U",
         new[] { Polygon((0, 0), (7000, 0), (7000, 5200), (5100, 5200), (5100, 1900),
             (1900, 1900), (1900, 5200), (0, 5200)) })),
-    ("prototype rejects acute notch with insufficient coverage", () => CheckPrototypeRejects("prototype notch",
+    ("prototype rejects narrow triangular cut with insufficient coverage", () => CheckPrototypeRejects("prototype notch",
         new[] { Polygon((0, 0), (7000, 0), (7000, 5000), (3700, 5000), (3400, 3300),
             (3100, 5000), (0, 5000)) })),
     ("production contour route around one internal hole", () => CheckGenerated("production hole contour",
@@ -91,14 +147,14 @@ var checks = new List<(string Name, Func<bool> Run)>
         {
             Polygon((0, 0), (7000, 0), (6200, 4400), (800, 4400)),
             Rect(2700, 1700, 4300, 3000)
-        }, maximumCoverageFactor: 1.65)),
+        }, checkStraightOffsets: true, minimumStraightWallOffsets: 8, maximumCoverageFactor: 1.65)),
     ("octagonal room with an internal obstacle", () => CheckGenerated(
         "octagon with obstacle", new[]
         {
             Polygon((500, 0), (6500, 0), (7000, 500), (7000, 3900),
                 (6500, 4400), (500, 4400), (0, 3900), (0, 500)),
             Rect(2500, 1600, 4500, 3000)
-        }, maximumCoverageFactor: 1.65)),
+        }, checkStraightOffsets: true, minimumStraightWallOffsets: 12, maximumCoverageFactor: 1.65)),
     ("short bevel around an internal obstacle", () => CheckGenerated(
         "short bevel", new[]
         {
@@ -134,20 +190,30 @@ var checks = new List<(string Name, Func<bool> Run)>
         expectedAngle: 21.8, checkStraightOffsets: true, minimumStraightWallOffsets: 1,
         maximumCoverageFactor: 1.65)),
     ("L-shaped concave room", () => CheckGenerated("L shape", new[]
-        { Polygon((0, 0), (6500, 0), (6500, 2100), (2800, 2100), (2800, 5200), (0, 5200)) })),
+        { Polygon((0, 0), (6500, 0), (6500, 2100), (2800, 2100), (2800, 5200), (0, 5200)) },
+        checkStraightOffsets: true, minimumStraightWallOffsets: 6)),
     ("U-shaped room", () => CheckGenerated("U shape", new[]
         { Polygon((0, 0), (7000, 0), (7000, 5200), (5100, 5200), (5100, 1900),
-            (1900, 1900), (1900, 5200), (0, 5200)) })),
+            (1900, 1900), (1900, 5200), (0, 5200)) },
+        checkStraightOffsets: true, minimumStraightWallOffsets: 8)),
     ("C-shaped room", () => CheckGenerated("C shape", new[]
         { Polygon((0, 0), (7000, 0), (7000, 1700), (2200, 1700), (2200, 4300),
-            (7000, 4300), (7000, 6000), (0, 6000)) })),
+            (7000, 4300), (7000, 6000), (0, 6000)) },
+        checkStraightOffsets: true, minimumStraightWallOffsets: 8)),
     ("one internal rectangular obstacle", () => CheckGenerated("one hole", new[]
         { Rect(0, 0, 7000, 4800), Rect(2300, 1500, 4700, 3400) }, checkStraightOffsets: true)),
     ("reversed loop winding with an inner obstacle", () => CheckGenerated("reversed winding", new[]
         { Rect(0, 0, 7000, 4800).Reverse().ToList(), Rect(2300, 1500, 4700, 3400) })),
     ("multiple internal obstacles", () => CheckGenerated("multiple holes", new[]
         { Rect(0, 0, 9000, 5000), Rect(1800, 1500, 3000, 3400), Rect(5700, 900, 7600, 4100) },
-        maximumCoverageFactor: 1.8)),
+        checkStraightOffsets: true, minimumStraightWallOffsets: 12, maximumCoverageFactor: 1.8)),
+    ("chamfer and internal obstacle at a 65 mm setback", () => CheckGenerated(
+        "chamfer with a 65 mm setback", new[]
+        {
+            Polygon((0, 0), (7000, 0), (7000, 2800), (5500, 4400), (0, 4400)),
+            Rect(2300, 1500, 4700, 3200)
+        }, checkStraightOffsets: true, minimumStraightWallOffsets: 9, maximumCoverageFactor: 1.65,
+        connectorGapMillimeters: 200, wallOffsetMillimeters: 65)),
     ("curved boundary approximation with a hole", () => CheckGenerated("rounded room", new[]
         { RoundedRectangle(0, 0, 7000, 5000, 700, 8), Circle(3500, 2500, 650, 24) })),
     ("acute notch", () => CheckGenerated("acute notch", new[]
@@ -230,6 +296,351 @@ static bool CheckSideBySideClipperResolution()
     return true;
 }
 
+static bool CheckSingleElbowVertices()
+{
+    foreach (double degrees in new[] { 90.0, -90.0, 45.0, 135.0 })
+    {
+        double radians = degrees * Math.PI / 180.0;
+        var sharp = new[] { new PerimeterSpiralCore.Point(-200, 0), new(0, 0),
+            new(200 * Math.Cos(radians), 200 * Math.Sin(radians)) };
+        if (!PerimeterSpiralCore.TryRoundPolyline(sharp, 30, 20, closed: false, out var rounded))
+            return Fail("single elbow", $"could not sample bend {degrees}°");
+        // Rotate into a nonhorizontal plane and offset its elevation.
+        var input = rounded.Select(p => new XYZ(p.X / MmPerFoot, p.Y * 0.8 / MmPerFoot,
+            5 + p.Y * 0.6 / MmPerFoot)).ToList();
+        List<XYZ> output = PipeFittingPath.ToFittingVertices(input, out var elbows);
+        if (output.Count != 3 || elbows.Count != 1 || !elbows.Contains(output[1]) ||
+            !ReferenceEquals(output[0], input[0]) || !ReferenceEquals(output[^1], input[^1]) ||
+            output[1].DistanceTo(new XYZ(0, 0, 5)) > 1e-8)
+            return Fail("single elbow", $"sampled {degrees}° bend did not become the original tangent intersection");
+    }
+
+    var chamfer = Polygon((-250, 0), (-20, 0), (0, 20), (0, 250));
+    var sharpPath = PipeFittingPath.ToFittingVertices(chamfer, out var roundedElbows);
+    if (!sharpPath.SequenceEqual(chamfer) || roundedElbows.Count != 0)
+        return Fail("single elbow", "an intentional chamfer changed");
+
+    var square = new[] { new PerimeterSpiralCore.Point(-250, 0), new(0, 0), new(0, 140), new(250, 140) };
+    if (!PerimeterSpiralCore.TryRoundPolyline(square, 28, 20, closed: false, out var twoTurns))
+        return false;
+    var combined = PipeFittingPath.ToFittingVertices(twoTurns.Select(p => FromMillimeters(p.X, p.Y)).ToList(), out var twoElbows);
+    return combined.Count == 4 && twoElbows.Count == 2 &&
+        combined[1].DistanceTo(FromMillimeters(0, 0)) < 1e-8 && combined[2].DistanceTo(FromMillimeters(0, 140)) < 1e-8;
+}
+
+static bool CheckGeneratedElbows()
+{
+    IList<XYZ> rounded = Build(new[] { Rect(0, 0, 7000, 4800), Rect(2300, 1500, 4700, 3400) }, 0);
+    List<XYZ> vertices = PipeFittingPath.ToFittingVertices(rounded, out var elbows);
+    if (elbows.Count < 20 || vertices.Count >= rounded.Count / 2 ||
+        !ReferenceEquals(rounded[0], vertices[0]) || !ReferenceEquals(rounded[^1], vertices[^1]) ||
+        vertices.Zip(vertices.Skip(1), (a, b) => a.DistanceTo(b)).Any(length => length * MmPerFoot < 2.54 - 1e-5))
+        return Fail("production elbow vertices", $"sampled {rounded.Count}, fitting vertices {vertices.Count}, single elbows {elbows.Count}");
+    Console.WriteLine($"      production coil: {rounded.Count} sampled vertices, {vertices.Count} fitting vertices, {elbows.Count} merged bends");
+    return true;
+}
+
+static bool CheckSegmentBuckets()
+{
+    const double radius = 50;
+    (Point Start, Point End)[] segments =
+    {
+        (new Point(-380, -220), new Point(250, -220)),
+        (new Point(-150, -120), new Point(-150, 240)),
+        (new Point(-900, 1400), new Point(1400, 2200)),
+        (new Point(60, 125), new Point(60, 125))
+    };
+    var buckets = new SegmentBuckets<Point>(segments, point => (point.X, point.Y),
+        PointSegmentDistanceSquared, radius);
+    var samples = new List<Point> { new(-200, 50), new(100, 100), new(100, 3100), new(4000, 4000) };
+    var random = new Random(8416);
+    for (int i = 0; i < 300; i++)
+        samples.Add(new Point(random.Next(-700, 2000), random.Next(-500, 2500)));
+
+    foreach (Point point in samples)
+    {
+        double expected = segments.Min(segment => PointSegmentDistanceSquared(point, segment.Start, segment.End));
+        if (buckets.NearestSquared(point) != expected ||
+            (buckets.NearestSquared(point, requireExactDistance: false) <= radius * radius) != (expected <= radius * radius))
+            return Fail("spatial buckets", $"invalid coverage distance at {point}");
+    }
+    return true;
+}
+
+static bool CheckCircuitLimits()
+{
+    FloorCircuitLimits[] invalid =
+    {
+        new(null, null, null), new(2, null, null), new(null, 70, null), new(2, 70, 12),
+        new(20, 40, null), new(-1, 80, null), new(null, null, 0), new(null, null, double.NaN)
+    };
+    return invalid.All(limits => limits.GetValidationError() != null) &&
+        new FloorCircuitLimits(0, 80, null).GetValidationError() == null &&
+        new FloorCircuitLimits(null, null, 12).GetValidationError() == null;
+}
+
+static bool CheckSteppedWallPitch()
+{
+    const string name = "stepped wall pitch";
+    foreach (double height in new[] { 3900.0, 4000.0, 4100.0 })
+    {
+        var outline = Polygon((0, 0), (3200, 0), (3200, 580), (4900, 580), (4900, 630), (6900, 630),
+            (6900, height), (0, height));
+        var plan = FloorCircuitLayout.Build(new[] { outline }, FromMillimeters(6900, 780),
+            new XYZ(-1, 0, 0), Pitch, WallOffset, Diameter, 0, -77, new FloorCircuitLimits(null, null, 14));
+        double area = (6900 * height - 1700 * 580 - 2000 * 630) / 1e6;
+        if (plan.Count == 0 || plan.Any(circuit => circuit.AreaSquareMeters > 14.000001) ||
+            Math.Abs(plan.Sum(circuit => circuit.AreaSquareMeters) - area) > 0.001)
+            return Fail(name, $"missing or oversized circuit at height {height:F0} mm");
+        var paths = plan.Select(circuit => circuit.Points.Select(ToMillimeters).ToList()).ToList();
+        if (paths.Any(path => HasSelfCrossing(path) ||
+            path.Zip(path.Skip(1), Distance).Any(length => length < 2.54 - 1e-5)))
+            return Fail(name, $"invalid pipe geometry at height {height:F0} mm");
+        double gap = paths.Min(path => MinimumLongRunPitch(path, Pitch));
+        Console.WriteLine($"      {name} at height {height:F0} mm: {plan.Count} circuits, minimum pitch {gap:F1} mm");
+        if (!double.IsFinite(gap) || gap < Pitch * 0.88 - 0.5)
+            return Fail(name, $"long parallel runs are only {gap:F1} mm apart");
+    }
+    return true;
+}
+
+static double MinimumLongRunPitch(IList<Point> points, double pitch)
+{
+    double minimum = double.PositiveInfinity;
+    for (int index = 0; index + 1 < points.Count; index++)
+    {
+        Point a = points[index], b = points[index + 1];
+        bool horizontal = Math.Abs(a.Y - b.Y) < 0.01;
+        if (!horizontal && Math.Abs(a.X - b.X) >= 0.01)
+            continue;
+        for (int other = index + 2; other + 1 < points.Count; other++)
+        {
+            Point c = points[other], d = points[other + 1];
+            if ((horizontal ? Math.Abs(c.Y - d.Y) : Math.Abs(c.X - d.X)) >= 0.01)
+                continue;
+            double firstLow = horizontal ? Math.Min(a.X, b.X) : Math.Min(a.Y, b.Y);
+            double firstHigh = horizontal ? Math.Max(a.X, b.X) : Math.Max(a.Y, b.Y);
+            double secondLow = horizontal ? Math.Min(c.X, d.X) : Math.Min(c.Y, d.Y);
+            double secondHigh = horizontal ? Math.Max(c.X, d.X) : Math.Max(c.Y, d.Y);
+            if (Math.Min(firstHigh, secondHigh) - Math.Max(firstLow, secondLow) >= 3 * pitch)
+                minimum = Math.Min(minimum, horizontal ? Math.Abs(a.Y - c.Y) : Math.Abs(a.X - c.X));
+        }
+    }
+    return minimum;
+}
+
+static bool CheckRecessedScreenshot(double scale, double angle = 0)
+{
+    const string name = "screenshot with three wall recesses";
+    var outline = Polygon(new (double X, double Y)[]
+    {
+        (0, 0), (181, 0), (181, 37), (263, 37), (263, 0), (421, 0),
+        (421, 105), (386, 105), (386, 266), (421, 266), (421, 328),
+        (204, 328), (204, 363), (0, 363)
+    }.Select(p => (p.X * scale, p.Y * scale)).ToArray());
+    XYZ start = FromMillimeters(421 * scale, 80 * scale);
+    var direction = new XYZ(-1, 0, 0);
+    IList<XYZ> layout = outline;
+    if (angle != 0)
+    {
+        layout = Rotate(outline, angle);
+        start = Rotate(new[] { start }, angle)[0];
+        direction = Rotate(new[] { direction }, angle)[0];
+    }
+    var limits = new FloorCircuitLimits(null, null, 10);
+    var plan = FloorCircuitLayout.Build(new[] { layout }, start, direction,
+        Pitch, WallOffset, Diameter, 0, -77, limits);
+    if (plan.Count == 0)
+        return Fail(name, $"no route at scale {scale}");
+    double requiredArea = (421 * 363 - 82 * 37 - 35 * 161 - 217 * 35) * scale * scale / 1e6;
+    if (Math.Abs(plan.Sum(c => c.AreaSquareMeters) - requiredArea) > 0.001 ||
+        plan.Any(c => c.AreaSquareMeters > 10.000001))
+        return Fail(name, "area outside the limit or missing during subdivision");
+    var anchor = plan.Where(c => c.ConnectsToSelectedPipe).ToList();
+    if (anchor.Count != 1 || Distance(ToMillimeters(anchor[0].Points[0]), ToMillimeters(start)) > 0.01)
+        return Fail(name, "connection to selected pipe changed");
+    var segments = new List<(Point Start, Point End)>();
+    foreach (var circuit in plan)
+    {
+        List<Point> points = (angle == 0 ? circuit.Points : Rotate(circuit.Points, -angle))
+            .Select(ToMillimeters).ToList();
+        if (Math.Abs(Math.Abs(points[^1].Y - points[0].Y) - 150) > 0.001 ||
+            points[1].X >= points[0].X || points[^2].X >= points[^1].X ||
+            Math.Abs(points[1].Y - points[0].Y) > 0.001 ||
+            Math.Abs(points[^2].Y - points[^1].Y) > 0.001 || HasSelfCrossing(points) ||
+            points.Zip(points.Skip(1), Distance).Any(length => length < 2.54 - 1e-5))
+            return Fail(name, "incorrect outlet spacing, self-crossing or too-short pipe");
+        var next = points.Zip(points.Skip(1), (a, b) => (Start: a, End: b)).ToList();
+        foreach (var segment in next)
+        foreach (var previous in segments)
+            if (SegmentDistanceSquared(segment.Start, segment.End, previous.Start, previous.End) < Diameter * Diameter - 0.001)
+                return Fail(name, "two circuits intersect or touch");
+        segments.AddRange(next);
+    }
+    var boundary = new List<List<Point>> { outline.Select(ToMillimeters).ToList() };
+    double clearance = WallOffset + Diameter / 2;
+    double maxDistance = 0;
+    Point worstPoint = default;
+    for (double x = clearance; x < 421 * scale - clearance; x += 60)
+    for (double y = clearance; y < 363 * scale - clearance; y += 60)
+    {
+        var sample = new Point(x, y);
+        if (!InsideRegion(boundary, sample) || PointToLoopDistanceSquared(sample, boundary[0]) < clearance * clearance)
+            continue;
+        double distance = Math.Sqrt(segments.Min(s => PointSegmentDistanceSquared(sample, s.Start, s.End)));
+        if (distance > maxDistance)
+        {
+            maxDistance = distance;
+            worstPoint = sample;
+        }
+    }
+    Console.WriteLine($"      {name} at scale {scale}, angle {angle}: {plan.Count} circuits, worst sampled gap {maxDistance:F1} mm at {worstPoint}");
+    return maxDistance <= 0.85 * Pitch || Fail(name, $"unheated gap at scale {scale}: {maxDistance:F1} mm");
+}
+
+static bool CheckCircuitPlan(string name, FloorCircuitLimits limits, int expectedCount,
+    bool withHole = false, double startY = 5200, double width = 7000, double height = 6200,
+    bool right = false, double connectorDistance = 450, double diameter = Diameter,
+    bool chamfer = false, bool recessed = false, bool openingNearOutlet = false, double pitch = Pitch,
+    bool checkCoverage = false)
+{
+    XYZ start = FromMillimeters(right ? width + connectorDistance : -connectorDistance, startY);
+    XYZ direction = right ? new XYZ(-1, 0, 0) : new XYZ(1, 0, 0);
+    var loops = new List<IList<XYZ>> { Rect(0, 0, width, height) };
+    double expectedArea = width * height / 1e6;
+    if (chamfer)
+    {
+        loops[0] = Polygon((0, 0), (width, 0), (width, height - 1250), (width - 900, height), (0, height));
+        expectedArea -= 0.5625;
+    }
+    if (recessed)
+    {
+        loops[0] = Polygon((0, 0), (width, 0), (width, 1700), (width - 3900, 1700),
+            (width - 3900, 4300), (width, 4300), (width, height), (0, height));
+        expectedArea -= 10.14;
+    }
+    if (openingNearOutlet)
+    {
+        loops.Add(Rect(350, 2200, 800, 2850));
+        expectedArea -= 0.2925;
+    }
+    if (withHole)
+    {
+        loops.Add(Rect(2800, 2400, 3600, 2900));
+        loops = loops.Select(loop => Rotate(loop, 23)).ToList();
+        start = Rotate(new[] { start }, 23)[0];
+        direction = Rotate(new[] { direction }, 23)[0];
+        expectedArea -= 0.4;
+    }
+
+    var plan = FloorCircuitLayout.Build(loops, start, direction, pitch, WallOffset, diameter,
+        0, -77, limits);
+    if (plan.Count != expectedCount)
+        return Fail(name, $"unexpected circuit count {plan.Count}");
+    if (plan.Count(circuit => circuit.ConnectsToSelectedPipe) != 1 ||
+        plan.Single(circuit => circuit.ConnectsToSelectedPipe).Points[0]
+            .DistanceTo(new XYZ(start.X, start.Y, start.Z + 77 / MmPerFoot)) > 1e-7)
+        return Fail(name, "selected endpoint was not preserved exactly");
+    if (Math.Abs(plan.Sum(circuit => circuit.AreaSquareMeters) - expectedArea) > 0.0001)
+        return Fail(name, "subdivision does not conserve heated area");
+    double furthestWall = loops[0].Min(point => point.X * direction.X + point.Y * direction.Y);
+    var outletSpans = new List<(double Min, double Max)>();
+    for (int i = 0; i < plan.Count; i++)
+    {
+        var circuit = plan[i];
+        if (limits.MaximumAreaSquareMeters is double area && circuit.AreaSquareMeters > area + 1e-6 ||
+            limits.MaximumLengthMeters is double length &&
+            circuit.LengthMeters + 2 * limits.CollectorDistanceMeters.GetValueOrDefault() > length + 1e-6)
+            return Fail(name, "a circuit exceeds its limit");
+        var outletOffsets = new List<double>();
+        var outletPositions = new List<double>();
+        foreach (var (port, next) in new[] { (circuit.Points[0], circuit.Points[1]),
+            (circuit.Points[^1], circuit.Points[^2]) })
+        {
+            double along = port.X * direction.X + port.Y * direction.Y;
+            double across = port.X * direction.Y - port.Y * direction.X;
+            double sideError = (next.X - port.X) * direction.Y - (next.Y - port.Y) * direction.X;
+            if (along > furthestWall + 1e-7 || Math.Abs(sideError) > 1e-7)
+                return Fail(name, "a port is not pointing outward on the selected side");
+            outletOffsets.Add(across * MmPerFoot);
+            outletPositions.Add(along);
+        }
+        if (Math.Abs(outletOffsets.Max() - outletOffsets.Min() - 150) > 0.001 ||
+            Math.Abs(outletPositions[0] - outletPositions[1]) * MmPerFoot > 0.001 ||
+            Math.Abs(circuit.Points[0].Z - circuit.Points[^1].Z) * MmPerFoot > 0.001)
+            return Fail(name, "the outlet pair is not 150 mm apart on one line");
+        outletSpans.Add((outletOffsets.Min(), outletOffsets.Max()));
+        List<Point> points = circuit.Points.Select(ToMillimeters).ToList();
+        if (HasSelfCrossing(points))
+            return Fail(name, "a circuit crosses itself");
+        int wallCrossings = 0;
+        for (int k = 0; k + 1 < circuit.Points.Count; k++)
+        {
+            XYZ a = circuit.Points[k], b = circuit.Points[k + 1];
+            if (a.DistanceTo(b) * MmPerFoot < 2.54 - 1e-5)
+                return Fail(name, "a pipe segment is too short to create");
+            double fromWall = a.X * direction.X + a.Y * direction.Y - furthestWall;
+            double toWall = b.X * direction.X + b.Y * direction.Y - furthestWall;
+            bool aInside = fromWall > 1e-9, bInside = toWall > 1e-9;
+            if (aInside != bInside)
+                wallCrossings++;
+        }
+        if (wallCrossings != 2)
+            return Fail(name, "a circuit has more or fewer than two wall crossings");
+        foreach (IList<XYZ> loop in loops.Skip(1))
+        {
+            List<Point> hole = loop.Select(ToMillimeters).ToList();
+            for (int k = 0; k + 1 < points.Count; k++)
+                if (SegmentToLoopDistanceSquared(points[k], points[k + 1], hole) <
+                    Math.Pow(WallOffset * 0.98 + diameter / 2 - WallMeasurementTolerance, 2))
+                    return Fail(name, "a circuit violates the hole setback");
+        }
+        foreach (var previous in plan.Take(i))
+        {
+            List<Point> other = previous.Points.Select(ToMillimeters).ToList();
+            for (int k = 0; k + 1 < points.Count; k++)
+            for (int l = 0; l + 1 < other.Count; l++)
+                if (SegmentDistanceSquared(points[k], points[k + 1], other[l], other[l + 1]) < diameter * diameter - 0.001)
+                    return Fail(name, "two circuits intersect or touch");
+        }
+    }
+    var sortedSpans = outletSpans.OrderBy(span => span.Min).ToList();
+    if (sortedSpans.Zip(sortedSpans.Skip(1), (a, b) => b.Min - a.Max).Any(gap => gap < diameter))
+        return Fail(name, "outlet pairs are interleaved or too close");
+    if (checkCoverage && !CheckFullWidthCoverage(name, plan, width, height, pitch, diameter))
+        return false;
+    Console.WriteLine($"      {name}: {plan.Count} circuits, areas {string.Join(", ", plan.Select(c => c.AreaSquareMeters.ToString("F2")))} m², lengths {string.Join(", ", plan.Select(c => c.LengthMeters.ToString("F2")))} m");
+    return true;
+}
+
+static bool CheckFullWidthCoverage(string name, IReadOnlyList<FloorCircuitLayout.Circuit> plan,
+    double width, double height, double pitch, double diameter)
+{
+    var segments = plan.SelectMany(circuit => circuit.Points.Zip(circuit.Points.Skip(1),
+        (a, b) => (Start: ToMillimeters(a), End: ToMillimeters(b)))).ToList();
+    double inset = WallOffset + diameter / 2;
+    double maximumDistance = 0;
+    Point worst = default;
+    int columns = (int)Math.Ceiling(width / (pitch / 2));
+    int rows = (int)Math.Ceiling(height / (pitch / 2));
+    for (int i = 0; i <= columns; i++)
+    for (int j = 0; j <= rows; j++)
+    {
+        var sample = new Point(inset + (width - 2 * inset) * i / columns,
+            inset + (height - 2 * inset) * j / rows);
+        double distance = Math.Sqrt(segments.Min(segment =>
+            PointSegmentDistanceSquared(sample, segment.Start, segment.End)));
+        if (distance > maximumDistance)
+        {
+            maximumDistance = distance;
+            worst = sample;
+        }
+    }
+    Console.WriteLine($"      {name}: maximum distance to a pipe over the full width is {maximumDistance:F1} mm at {worst}");
+    return maximumDistance <= pitch ||
+        Fail(name, $"an unheated strip remains: {maximumDistance:F1} mm to a pipe");
+}
+
 static bool CheckDoorwaySpiral()
 {
     const string name = "doorway spiral";
@@ -310,9 +721,10 @@ static bool CheckRectangularPitch(string name, double insetHeight, double minimu
 static bool CheckGenerated(string name, IList<IList<XYZ>> loops, int connectorMode = 0,
     double? expectedAngle = null, bool checkStraightOffsets = false, int minimumStraightWallOffsets = 4,
     double maximumCoverageFactor = 1.5, double connectorGapMillimeters = 600,
-    double connectorCenterOffsetMillimeters = 0)
+    double connectorCenterOffsetMillimeters = 0, double wallOffsetMillimeters = WallOffset)
 {
-    IList<XYZ> path = Build(loops, connectorMode, connectorGapMillimeters, connectorCenterOffsetMillimeters);
+    IList<XYZ> path = Build(loops, connectorMode, connectorGapMillimeters, connectorCenterOffsetMillimeters,
+        wallOffsetMillimeters);
     if (path.Count < 4)
         return Fail(name, $"expected a complete route, received {path.Count} points");
 
@@ -340,7 +752,7 @@ static bool CheckGenerated(string name, IList<IList<XYZ>> loops, int connectorMo
 
     List<List<Point>> mmLoops = loops.Select(loop => loop.Select(ToMillimeters).ToList()).ToList();
     List<List<Point>> holes = FindInnerLoops(mmLoops);
-    double clearance = RequiredCenterlineClearance;
+    double clearance = wallOffsetMillimeters * 0.98 + Diameter / 2.0 - WallMeasurementTolerance;
     var safeBodySegments = new bool[millimeterPath.Count - 1];
     for (int i = 0; i < safeBodySegments.Length; i++)
     {
@@ -418,7 +830,7 @@ static bool CheckGenerated(string name, IList<IList<XYZ>> loops, int connectorMo
         foreach (List<Point> hole in holes)
         {
             if (SegmentToLoopDistanceSquared(millimeterPath[i], millimeterPath[i + 1], hole) < clearance * clearance - 1e-5)
-                return Fail(name, $"route violates {WallOffset} mm hole setback near segment {i}");
+                return Fail(name, $"route violates {wallOffsetMillimeters} mm hole setback near segment {i}");
         }
 
         // Connector leads can run outside the room to reach their selected pipe ends. Find
@@ -444,7 +856,7 @@ static bool CheckGenerated(string name, IList<IList<XYZ>> loops, int connectorMo
         return Fail(name, $"no route segment follows expected angle {expectedAngle.Value:F1} degrees");
 
     if (checkStraightOffsets && !CheckStraightWallOffsets(name, mmLoops, millimeterPath,
-            minimumStraightWallOffsets, bodyStart, bodyEnd))
+            minimumStraightWallOffsets, wallOffsetMillimeters, bodyStart, bodyEnd))
         return false;
 
     if (largestUncoveredDistance > maximumCoverageGap)
@@ -512,7 +924,7 @@ static bool CheckChamferOffset()
     }
 
     double expectedSetback = WallOffset + Diameter / 2.0;
-    return longestOverlap >= 500 && Math.Abs(nearestSetback - expectedSetback) <= 15
+    return longestOverlap >= 500 && Math.Abs(nearestSetback - expectedSetback) <= WallOffset * 0.02 + WallMeasurementTolerance
         ? true
         : Fail(name, $"no long straight run at {expectedSetback:F0} mm from chamfer; " +
                       $"best overlap={longestOverlap:F1} mm, setback={nearestSetback:F1} mm");
@@ -623,7 +1035,7 @@ static bool CheckPrototypeBoundaryLap()
     if (!double.IsFinite(nearest))
         return Fail("prototype boundary lap", "no pipe segment follows the chamfer");
     double wallGap = nearest - Diameter / 2.0;
-    return wallGap >= WallOffset * 0.9 && wallGap <= WallOffset * 1.15
+    return Math.Abs(wallGap - WallOffset) <= WallOffset * 0.02 + WallMeasurementTolerance
         ? true
         : Fail("prototype boundary lap", $"chamfer setback is {wallGap:F1} mm");
 }
@@ -671,7 +1083,7 @@ static bool CheckPrototypeBoundaryLapForPolygon(string name, IList<XYZ> source)
                 uy * (pipeStart.X - wallStart.X)));
         }
         double wallGap = nearest - Diameter / 2.0;
-        if (!double.IsFinite(nearest) || wallGap < WallOffset * 0.9 || wallGap > WallOffset * 1.15)
+        if (!double.IsFinite(nearest) || Math.Abs(wallGap - WallOffset) > WallOffset * 0.02 + WallMeasurementTolerance)
             return Fail(name, $"wall edge {edgeIndex} setback is {wallGap:F1} mm");
     }
     return true;
@@ -756,11 +1168,12 @@ static bool CheckExpectedFailure(string name, IList<IList<XYZ>> loops, int conne
 }
 
 static IList<XYZ> Build(IList<IList<XYZ>> loops, int connectorMode = 0,
-    double connectorGapMillimeters = 600, double connectorCenterOffsetMillimeters = 0)
+    double connectorGapMillimeters = 600, double connectorCenterOffsetMillimeters = 0,
+    double wallOffsetMillimeters = WallOffset)
 {
     (XYZ start, XYZ startDirection, XYZ end, XYZ endDirection) = GetConnectors(loops, connectorMode,
         connectorGapMillimeters, connectorCenterOffsetMillimeters);
-    return AreaPipeLayout.CreateSpiralPath(loops, Pitch, WallOffset, Diameter,
+    return AreaPipeLayout.CreateSpiralPath(loops, Pitch, wallOffsetMillimeters, Diameter,
         0, -77, start, startDirection, end, endDirection);
 }
 
@@ -965,13 +1378,13 @@ static bool IsCollinear(Point vector, XYZ direction)
 }
 
 static bool CheckStraightWallOffsets(string name, IList<List<Point>> loops, IList<Point> path,
-    int minimumMeasuredWalls, int pathStart = 0, int pathEnd = -1)
+    int minimumMeasuredWalls, double wallOffsetMillimeters, int pathStart = 0, int pathEnd = -1)
 {
     if (pathEnd < 0) pathEnd = path.Count - 1;
     pathStart = Math.Max(0, pathStart);
     pathEnd = Math.Min(path.Count - 1, pathEnd);
-    double minAllowed = RequiredCenterlineClearance;
-    double maxAllowed = WallOffset * 1.15 + Diameter / 2.0 + 5.0;
+    double minAllowed = wallOffsetMillimeters * 0.98 + Diameter / 2.0 - WallMeasurementTolerance;
+    double maxAllowed = wallOffsetMillimeters * 1.02 + Diameter / 2.0 + WallMeasurementTolerance;
     int checkedWalls = 0;
     for (int loopIndex = 0; loopIndex < loops.Count; loopIndex++)
     {
@@ -1014,9 +1427,9 @@ static bool CheckStraightWallOffsets(string name, IList<List<Point>> loops, ILis
             continue;
         }
         checkedWalls++;
-        if (nearest < minAllowed - 0.1 || nearest > maxAllowed)
+        if (nearest < minAllowed || nearest > maxAllowed)
             return Fail(name, $"loop {loopIndex}, edge {edge} has a parallel run {nearest - Diameter / 2:F1} mm from wall; " +
-                $"allowed surface gap is {WallOffset * 0.9:F0}–{WallOffset * 1.15:F0} mm; " +
+                $"allowed surface gap is {wallOffsetMillimeters * 0.98:F2}–{wallOffsetMillimeters * 1.02:F2} mm; " +
                 $"closest segment ({nearestStart.X:F0},{nearestStart.Y:F0})–({nearestEnd.X:F0},{nearestEnd.Y:F0})");
     }
     }

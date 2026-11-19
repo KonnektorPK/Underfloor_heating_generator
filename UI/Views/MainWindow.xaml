@@ -1,158 +1,255 @@
-<Window x:Class="Underfloor_heating_generator.UI.Views.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Генератор теплого пола" Height="600" Width="540"
-        MinHeight="540" MinWidth="500" ResizeMode="CanMinimize"
-        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Closing="MainWindow_Closing"
-        Icon="../../Resources/Icons/WarmFloor.ico">
-    <!-- Resolve window resources relative to the versioned XAML URI. -->
+<Window x:Class="Underfloor_heating_generator.UI.Views.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Генератор тёплого пола" Height="750" Width="610" MinHeight="335" MinWidth="380" ResizeMode="CanResize" UseLayoutRounding="True" WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Closing="MainWindow_Closing" PreviewKeyDown="Window_PreviewKeyDown" Icon="../../Resources/Icons/WarmFloor.ico" Background="{DynamicResource Canvas}" Foreground="{DynamicResource Ink}">
     <Window.Resources>
-        <Style TargetType="TextBlock">
-            <Setter Property="Margin" Value="0,8,0,4" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="MinHeight" Value="28" />
-            <Setter Property="Padding" Value="4,2" />
-        </Style>
-        <Style TargetType="Button">
-            <Setter Property="MinHeight" Value="34" />
-            <Setter Property="Padding" Value="10,4" />
-        </Style>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="../Theme/Theme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Window.Resources>
-    <Grid Margin="14">
+    <Grid Background="{DynamicResource Canvas}" TextElement.FontFamily="{StaticResource UiFont}" TextElement.FontSize="{StaticResource BodyFont}">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TabControl Grid.Row="0">
-            <TabItem Header="DWG в теплый пол">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <Grid Margin="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Тип трубы" />
-                        <ComboBox x:Name="PipeSelection" Grid.Row="1" Grid.ColumnSpan="2" />
-                        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="Тип системы трубы" />
-                        <ComboBox x:Name="SystemTypePipe" Grid.Row="3" Grid.ColumnSpan="2" />
-                        <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Text="Чертеж на активном уровне" />
-                        <ComboBox x:Name="SelectDrawingDWG" Grid.Row="5" Grid.ColumnSpan="2" />
-                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Диаметр трубы, мм" />
-                        <TextBlock Grid.Row="6" Grid.Column="1" Text="Высота укладки, мм" />
-                        <ComboBox x:Name="PipeDiametr" Grid.Row="7" Grid.Column="0" Margin="0,0,6,0" IsEditable="True">
-                            <ComboBoxItem Content="16" /><ComboBoxItem Content="20" />
-                            <ComboBoxItem Content="25" /><ComboBoxItem Content="32" />
-                        </ComboBox>
-                        <ComboBox x:Name="PipeLayingHeight" Grid.Row="7" Grid.Column="1" Margin="6,0,0,0" IsEditable="True">
-                            <ComboBoxItem Content="0" /><ComboBoxItem Content="-20" />
-                            <ComboBoxItem Content="-30" /><ComboBoxItem Content="-45" />
-                            <ComboBoxItem Content="-77" /><ComboBoxItem Content="-90" />
-                            <ComboBoxItem Content="-100" /><ComboBoxItem Content="-110" />
-                            <ComboBoxItem Content="-125" />
-                        </ComboBox>
-                        <CheckBox x:Name="SaveChanges" Grid.Row="8" Grid.ColumnSpan="2" Margin="0,14,0,12"
-                                  IsChecked="True" Content="Сохранить текущие значения при перезапуске" />
-                        <CheckBox x:Name="AlignDirectionsCheckBox" Grid.Row="9" Grid.ColumnSpan="2" Margin="0,0,0,10"
-                                  IsChecked="True" Content="Подгонять направление по DWG (разрешённые углы)" />
-                        <StackPanel x:Name="ProgressPanel" Grid.Row="10" Grid.ColumnSpan="2" Margin="0,4,0,10"
-                                    Visibility="Collapsed">
-                            <TextBlock x:Name="ProgressPercent" Margin="0,0,0,4" Text="0%"
-                                       HorizontalAlignment="Center" />
-                            <ProgressBar x:Name="ContourProgressBar" Height="14" Minimum="0" Maximum="100" Value="0" />
-                        </StackPanel>
-                        <Button x:Name="CreateWarmFloor" Grid.Row="11" Grid.ColumnSpan="2"
-                                Content="Построить теплый пол из DWG" Click="CreateWarmFloor_Click" />
-                    </Grid>
+        <Border Background="{DynamicResource Surface}" Padding="{StaticResource PagePadding}">
+            <DockPanel LastChildFill="True">
+                <Button x:Name="SettingsButton" DockPanel.Dock="Right" Margin="{StaticResource GutterRight}" Click="Settings_Click" VerticalAlignment="Center" Content="Настройки" AutomationProperties.HelpText="Открыть настройки окна (Ctrl+,)" />
+                <StackPanel>
+                    <TextBlock Text="Тёплый пол" FontSize="{StaticResource TitleFont}" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level1" />
+                    <TextBlock x:Name="ViewSubtitle" Text="Преобразование чертежа в трубы Revit" Style="{StaticResource Hint}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <TabControl x:Name="Modes" Grid.Row="1" SelectionChanged="Modes_SelectionChanged" AutomationProperties.Name="Способ построения">
+            <TabItem x:Name="DwgTab" Header="Из _DWG" Tag="Преобразование чертежа в трубы Revit" Style="{StaticResource Tab}">
+                <ScrollViewer x:Name="DwgScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                    <StackPanel x:Name="DwgForm" Margin="{StaticResource PagePadding}" MinWidth="304">
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}" Text="Источник чертежа" />
+                                <StackPanel>
+                                    <Label x:Name="SelectDrawingDWGLabel" Content="Чертёж на активном уровне" Target="{Binding ElementName=SelectDrawingDWG}" />
+                                    <ComboBox x:Name="SelectDrawingDWG" AutomationProperties.LabeledBy="{Binding ElementName=SelectDrawingDWGLabel}"></ComboBox>
+                                    <TextBlock x:Name="SelectDrawingDWGError" Style="{StaticResource FieldError}" />
+                                </StackPanel>
+                                <TextBlock x:Name="DrawingEmpty" Style="{StaticResource Hint}" Margin="{StaticResource SmallTop}" Text="На активном уровне нет DWG. Добавьте чертёж в Revit и откройте генератор снова." Visibility="Collapsed" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}" Text="Параметры труб" />
+                                <StackPanel Margin="{StaticResource StackGap}">
+                                    <Label x:Name="PipeSelectionLabel" Content="Тип трубы" Target="{Binding ElementName=PipeSelection}" />
+                                    <ComboBox x:Name="PipeSelection" AutomationProperties.LabeledBy="{Binding ElementName=PipeSelectionLabel}"></ComboBox>
+                                    <TextBlock x:Name="PipeSelectionError" Style="{StaticResource FieldError}" />
+                                </StackPanel>
+                                <StackPanel Margin="{StaticResource StackGap}">
+                                    <Label x:Name="SystemTypePipeLabel" Content="Система труб" Target="{Binding ElementName=SystemTypePipe}" />
+                                    <ComboBox x:Name="SystemTypePipe" AutomationProperties.LabeledBy="{Binding ElementName=SystemTypePipeLabel}"></ComboBox>
+                                    <TextBlock x:Name="SystemTypePipeError" Style="{StaticResource FieldError}" />
+                                </StackPanel>
+                                <Grid Margin="{StaticResource StackGap}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="{StaticResource GutterLeft}">
+                                        <Label x:Name="PipeDiametrLabel" Content="Диаметр, мм" Target="{Binding ElementName=PipeDiametr}" />
+                                        <ComboBox x:Name="PipeDiametr" AutomationProperties.LabeledBy="{Binding ElementName=PipeDiametrLabel}" IsEditable="True">
+                                            <ComboBoxItem Content="16" />
+                                            <ComboBoxItem Content="20" />
+                                            <ComboBoxItem Content="25" />
+                                            <ComboBoxItem Content="32" />
+                                        </ComboBox>
+                                        <TextBlock x:Name="PipeDiametrError" Style="{StaticResource FieldError}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="{StaticResource GutterRight}">
+                                        <Label x:Name="PipeLayingHeightLabel" Content="Высота укладки, мм" Target="{Binding ElementName=PipeLayingHeight}" />
+                                        <ComboBox x:Name="PipeLayingHeight" AutomationProperties.LabeledBy="{Binding ElementName=PipeLayingHeightLabel}" IsEditable="True">
+                                            <ComboBoxItem Content="0" />
+                                            <ComboBoxItem Content="-20" />
+                                            <ComboBoxItem Content="-30" />
+                                            <ComboBoxItem Content="-45" />
+                                            <ComboBoxItem Content="-77" />
+                                            <ComboBoxItem Content="-90" />
+                                            <ComboBoxItem Content="-100" />
+                                            <ComboBoxItem Content="-110" />
+                                            <ComboBoxItem Content="-125" />
+                                        </ComboBox>
+                                        <TextBlock x:Name="PipeLayingHeightError" Style="{StaticResource FieldError}" />
+                                    </StackPanel>
+                                </Grid>
+                                <CheckBox x:Name="AlignDirectionsCheckBox" IsChecked="True" Content="Подгонять направление по DWG" AutomationProperties.HelpText="Использовать разрешённые углы при подгонке направления." />
+                                <CheckBox x:Name="SaveChanges" IsChecked="True" Content="Запомнить параметры DWG" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="Теплый пол по помещению">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <Grid Margin="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Область построения" />
-                        <Button x:Name="SelectFloorAreaButton" Grid.Row="1" Grid.ColumnSpan="2"
-                                Content="Выбрать помещение или цветовую область на плане"
-                                Click="SelectFloorArea_Click" />
-                        <TextBlock x:Name="SelectedFloorAreaText" Grid.Row="2" Grid.ColumnSpan="2"
-                                   Margin="0,6,0,4" Foreground="Gray" Text="Область не выбрана"
-                                   TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="Начальная труба" />
-                        <Button x:Name="SelectStartPipeButton" Grid.Row="4" Grid.ColumnSpan="2"
-                                Tag="Start" Content="Выбрать трубу начала" Click="SelectPipeEndpoint_Click" />
-                        <TextBlock x:Name="SelectedStartPipeText" Grid.Row="5" Grid.ColumnSpan="2"
-                                   Margin="0,4,0,4" Foreground="Gray" Text="Начальная труба не выбрана"
-                                   TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="6" Grid.ColumnSpan="2" Text="Конечная труба" />
-                        <Button x:Name="SelectEndPipeButton" Grid.Row="7" Grid.ColumnSpan="2"
-                                Tag="End" Content="Выбрать трубу конца" Click="SelectPipeEndpoint_Click" />
-                        <TextBlock x:Name="SelectedEndPipeText" Grid.Row="8" Grid.ColumnSpan="2"
-                                   Margin="0,4,0,4" Foreground="Gray" Text="Конечная труба не выбрана"
-                                   TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="9" Grid.ColumnSpan="2" Text="Тип трубы" />
-                        <ComboBox x:Name="StubPipeSelection" Grid.Row="10" Grid.ColumnSpan="2" />
-                        <TextBlock Grid.Row="11" Grid.ColumnSpan="2" Text="Тип системы трубы" />
-                        <ComboBox x:Name="StubSystemTypePipe" Grid.Row="12" Grid.ColumnSpan="2" />
-                        <TextBlock Grid.Row="13" Grid.Column="0" Text="Диаметр трубы, мм" />
-                        <TextBlock Grid.Row="13" Grid.Column="1" Text="Высота укладки, мм" />
-                        <ComboBox x:Name="StubPipeDiameter" Grid.Row="14" Grid.Column="0" Margin="0,0,6,0" IsEditable="True">
-                            <ComboBoxItem Content="16" /><ComboBoxItem Content="20" />
-                        </ComboBox>
-                        <ComboBox x:Name="StubLayingHeight" Grid.Row="14" Grid.Column="1" Margin="6,0,0,0" IsEditable="True">
-                            <ComboBoxItem Content="0" /><ComboBoxItem Content="-20" />
-                        </ComboBox>
-                        <TextBlock Grid.Row="15" Grid.Column="0" Text="Отступ от стены, мм" />
-                        <TextBlock Grid.Row="15" Grid.Column="1" Text="Шаг укладки, мм" />
-                        <ComboBox x:Name="WallOffset" Grid.Row="16" Grid.Column="0" Margin="0,0,6,0" IsEditable="True">
-                            <ComboBoxItem Content="50" /><ComboBoxItem Content="100" /><ComboBoxItem Content="150" /><ComboBoxItem Content="200" />
-                        </ComboBox>
-                        <ComboBox x:Name="PipeSpacing" Grid.Row="16" Grid.Column="1" Margin="6,0,0,0" IsEditable="True">
-                            <ComboBoxItem Content="100" /><ComboBoxItem Content="150" /><ComboBoxItem Content="200" /><ComboBoxItem Content="250" /><ComboBoxItem Content="300" />
-                        </ComboBox>
-                        <TextBlock Grid.Row="17" Grid.ColumnSpan="2" Text="Расстояние от коллектора, мм" />
-                        <ComboBox Grid.Row="18" Grid.ColumnSpan="2" IsEnabled="False" />
-                        <CheckBox x:Name="SaveAreaValues" Grid.Row="19" Grid.ColumnSpan="2" Margin="0,14,0,12"
-                                  IsChecked="True" Content="Сохранить текущие значения при перезапуске" />
-                        <TextBlock Grid.Row="20" Grid.ColumnSpan="2" Margin="0,8,0,16" Foreground="Gray"
-                                   Text="Выберите область и две трубы со свободными концами. Их диаметр и система должны совпадать с настройками."
-                                   TextWrapping="Wrap" />
-                        <Button x:Name="CreateAreaWarmFloor" Grid.Row="21" Grid.ColumnSpan="2"
-                                Content="Построить теплый пол" Click="CreateAreaWarmFloor_Click" />
-                    </Grid>
+            <TabItem x:Name="AreaTab" Header="По помещению" Tag="Раскладка контуров по выбранной области" Style="{StaticResource Tab}">
+                <ScrollViewer x:Name="AreaScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                    <StackPanel x:Name="AreaForm" Margin="{StaticResource PagePadding}" MinWidth="304">
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}" Text="Объекты на плане" />
+                                <Label x:Name="SelectFloorAreaButtonLabel" Content="Область построения" Target="{Binding ElementName=SelectFloorAreaButton}" />
+                                <Button x:Name="SelectFloorAreaButton" AutomationProperties.LabeledBy="{Binding ElementName=SelectFloorAreaButtonLabel}" HorizontalContentAlignment="Left" Content="Выбрать помещение или область" Click="SelectFloorArea_Click" />
+                                <TextBlock x:Name="SelectedFloorAreaText" Style="{StaticResource Hint}" Margin="{StaticResource SmallTop}" Text="Область не выбрана" AutomationProperties.LiveSetting="Polite" />
+                                <TextBlock x:Name="SelectFloorAreaButtonError" Style="{StaticResource FieldError}" Margin="{StaticResource SmallBottom}" />
+                                <Label x:Name="SelectStartPipeButtonLabel" Content="Подключение" Margin="{StaticResource SmallTop}" Target="{Binding ElementName=SelectStartPipeButton}" />
+                                <Button x:Name="SelectStartPipeButton" AutomationProperties.LabeledBy="{Binding ElementName=SelectStartPipeButtonLabel}" HorizontalContentAlignment="Left" Content="Выбрать трубу со свободным концом" Click="SelectPipeEndpoint_Click" />
+                                <TextBlock x:Name="SelectedStartPipeText" Style="{StaticResource Hint}" Margin="{StaticResource SmallTop}" Text="Труба не выбрана" AutomationProperties.LiveSetting="Polite" />
+                                <TextBlock x:Name="SelectStartPipeButtonError" Style="{StaticResource FieldError}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}" Text="Параметры укладки" />
+                                <StackPanel Margin="{StaticResource StackGap}">
+                                    <Label x:Name="StubPipeSelectionLabel" Content="Тип трубы" Target="{Binding ElementName=StubPipeSelection}" />
+                                    <ComboBox x:Name="StubPipeSelection" AutomationProperties.LabeledBy="{Binding ElementName=StubPipeSelectionLabel}"></ComboBox>
+                                    <TextBlock x:Name="StubPipeSelectionError" Style="{StaticResource FieldError}" />
+                                </StackPanel>
+                                <StackPanel Margin="{StaticResource StackGap}">
+                                    <Label x:Name="StubSystemTypePipeLabel" Content="Система труб" Target="{Binding ElementName=StubSystemTypePipe}" />
+                                    <ComboBox x:Name="StubSystemTypePipe" AutomationProperties.LabeledBy="{Binding ElementName=StubSystemTypePipeLabel}"></ComboBox>
+                                    <TextBlock x:Name="StubSystemTypePipeError" Style="{StaticResource FieldError}" />
+                                </StackPanel>
+                                <Grid Margin="{StaticResource StackGap}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="{StaticResource GutterLeft}">
+                                        <Label x:Name="StubPipeDiameterLabel" Content="Диаметр, мм" Target="{Binding ElementName=StubPipeDiameter}" />
+                                        <ComboBox x:Name="StubPipeDiameter" AutomationProperties.LabeledBy="{Binding ElementName=StubPipeDiameterLabel}" IsEditable="True">
+                                            <ComboBoxItem Content="16" />
+                                            <ComboBoxItem Content="20" />
+                                        </ComboBox>
+                                        <TextBlock x:Name="StubPipeDiameterError" Style="{StaticResource FieldError}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="{StaticResource GutterRight}">
+                                        <Label x:Name="StubLayingHeightLabel" Content="Высота укладки, мм" Target="{Binding ElementName=StubLayingHeight}" />
+                                        <ComboBox x:Name="StubLayingHeight" AutomationProperties.LabeledBy="{Binding ElementName=StubLayingHeightLabel}" IsEditable="True">
+                                            <ComboBoxItem Content="0" />
+                                            <ComboBoxItem Content="-20" />
+                                        </ComboBox>
+                                        <TextBlock x:Name="StubLayingHeightError" Style="{StaticResource FieldError}" />
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Margin="{StaticResource StackGap}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="{StaticResource GutterLeft}">
+                                        <Label x:Name="WallOffsetLabel" Content="Отступ от стены, мм" Target="{Binding ElementName=WallOffset}" />
+                                        <ComboBox x:Name="WallOffset" AutomationProperties.LabeledBy="{Binding ElementName=WallOffsetLabel}" IsEditable="True">
+                                            <ComboBoxItem Content="50" />
+                                            <ComboBoxItem Content="100" />
+                                            <ComboBoxItem Content="150" />
+                                            <ComboBoxItem Content="200" />
+                                        </ComboBox>
+                                        <TextBlock x:Name="WallOffsetError" Style="{StaticResource FieldError}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="{StaticResource GutterRight}">
+                                        <Label x:Name="PipeSpacingLabel" Content="Шаг укладки, мм" Target="{Binding ElementName=PipeSpacing}" />
+                                        <ComboBox x:Name="PipeSpacing" AutomationProperties.LabeledBy="{Binding ElementName=PipeSpacingLabel}" IsEditable="True">
+                                            <ComboBoxItem Content="100" />
+                                            <ComboBoxItem Content="150" />
+                                            <ComboBoxItem Content="200" />
+                                            <ComboBoxItem Content="250" />
+                                            <ComboBoxItem Content="300" />
+                                        </ComboBox>
+                                        <TextBlock x:Name="PipeSpacingError" Style="{StaticResource FieldError}" />
+                                    </StackPanel>
+                                </Grid>
+                                <CheckBox x:Name="SaveAreaValues" IsChecked="True" Content="Запомнить параметры укладки" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}" Text="Ограничение контура" />
+                                <TextBlock x:Name="LimitsHint" Style="{StaticResource Hint}" Margin="{StaticResource StackGap}" Text="Задайте площадь или укажите расстояние до коллектора и предельную длину контура." />
+                                <Grid Margin="{StaticResource StackGap}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="{StaticResource GutterLeft}">
+                                        <Label x:Name="CollectorDistanceInputLabel" Content="До коллектора, м" Target="{Binding ElementName=CollectorDistanceInput}" />
+                                        <TextBox x:Name="CollectorDistanceInput" AutomationProperties.LabeledBy="{Binding ElementName=CollectorDistanceInputLabel}" TextChanged="CircuitLimits_Changed" />
+                                        <TextBlock x:Name="CollectorDistanceInputError" Style="{StaticResource FieldError}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="{StaticResource GutterRight}">
+                                        <Label x:Name="MaximumLengthInputLabel" Content="Макс. длина, м" Target="{Binding ElementName=MaximumLengthInput}" />
+                                        <TextBox x:Name="MaximumLengthInput" AutomationProperties.LabeledBy="{Binding ElementName=MaximumLengthInputLabel}" TextChanged="CircuitLimits_Changed" />
+                                        <TextBlock x:Name="MaximumLengthInputError" Style="{StaticResource FieldError}" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel>
+                                    <Label x:Name="MaximumAreaInputLabel" Content="Максимальная площадь, м²" Target="{Binding ElementName=MaximumAreaInput}" />
+                                    <TextBox x:Name="MaximumAreaInput" AutomationProperties.LabeledBy="{Binding ElementName=MaximumAreaInputLabel}" TextChanged="CircuitLimits_Changed" />
+                                    <TextBlock x:Name="MaximumAreaInputError" Style="{StaticResource FieldError}" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource Hint}" Margin="{StaticResource SmallTop}" Text="При расчёте длины путь до коллектора учитывается в обе стороны. Расстояние между осями выводов каждой пары — 150 мм." />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </ScrollViewer>
             </TabItem>
         </TabControl>
-        <TextBlock x:Name="StatusText" Grid.Row="1" Margin="2,10,2,0" TextWrapping="Wrap" />
+        <ScrollViewer x:Name="SettingsPage" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+            <StackPanel x:Name="SettingsForm" Margin="{StaticResource PagePadding}" MinWidth="304">
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="Внешний вид" />
+                        <StackPanel Margin="{StaticResource StackGap}">
+                            <Label x:Name="ThemeSelectionLabel" Content="Тема" Target="{Binding ElementName=ThemeSelection}" />
+                            <ComboBox x:Name="ThemeSelection" AutomationProperties.LabeledBy="{Binding ElementName=ThemeSelectionLabel}" SelectionChanged="Appearance_Changed">
+                                <ComboBoxItem Content="Как в Windows" Tag="System" />
+                                <ComboBoxItem Content="Светлая" Tag="Light" />
+                                <ComboBoxItem Content="Тёмная" Tag="Dark" />
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Margin="{StaticResource StackGap}">
+                            <Label x:Name="ScaleSelectionLabel" Content="Масштаб интерфейса" Target="{Binding ElementName=ScaleSelection}" />
+                            <ComboBox x:Name="ScaleSelection" AutomationProperties.LabeledBy="{Binding ElementName=ScaleSelectionLabel}" SelectionChanged="Appearance_Changed">
+                                <ComboBoxItem Content="100%" Tag="100" />
+                                <ComboBoxItem Content="125%" Tag="125" />
+                                <ComboBoxItem Content="150%" Tag="150" />
+                                <ComboBoxItem Content="200%" Tag="200" />
+                            </ComboBox>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Hint}" Text="Язык интерфейса — русский." />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="Окно" />
+                        <CheckBox x:Name="RememberWindow" IsChecked="True" Content="Запоминать размер и положение" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+        <Border x:Name="Footer" Grid.Row="2" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,1,0,0" Padding="{StaticResource PagePadding}">
+            <StackPanel>
+                <Border x:Name="StatusPanel" Background="{DynamicResource Elevated}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" CornerRadius="{StaticResource ControlRadius}" Padding="{StaticResource ControlPadding}" Margin="{StaticResource StackGap}" Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock x:Name="StatusTitle" FontWeight="SemiBold" />
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="64" Focusable="False">
+                            <TextBlock x:Name="StatusText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+                <StackPanel x:Name="ProgressPanel" Margin="{StaticResource StackGap}" Visibility="Collapsed">
+                    <TextBlock x:Name="ProgressPercent" Style="{StaticResource Hint}" HorizontalAlignment="Right" Margin="{StaticResource LabelGap}" />
+                    <ProgressBar x:Name="ContourProgressBar" Height="5" Minimum="0" Maximum="100" Foreground="{DynamicResource Accent}" Background="{DynamicResource Elevated}" BorderThickness="0" AutomationProperties.Name="Ход построения" />
+                </StackPanel>
+                <Button x:Name="CreateWarmFloor" Style="{StaticResource PrimaryButton}" Content="Построить из DWG" Click="CreateWarmFloor_Click" AutomationProperties.HelpText="Построить тёплый пол по DWG (Ctrl+Enter)" />
+                <Button x:Name="CreateAreaWarmFloor" Style="{StaticResource PrimaryButton}" Visibility="Collapsed" Content="Построить по помещению" Click="CreateAreaWarmFloor_Click" AutomationProperties.HelpText="Построить тёплый пол в выбранной области (Ctrl+Enter)" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

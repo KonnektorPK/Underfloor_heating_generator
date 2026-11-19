@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clipper2Lib;
+using Underfloor_heating_generator.Infrastructure.Geometry;
 
 // Revit-independent perimeter-first, counter-flow spiral geometry core.
 namespace Underfloor_heating_generator.Infrastructure.Revit;
@@ -10,7 +11,7 @@ internal static class PerimeterSpiralCore
 {
     private const double Epsilon = 1e-7;
     private const double ClipperScale = 1000.0;
-    private const double OffsetArcToleranceMillimeters = 0.5;
+    private const double OffsetArcToleranceMillimeters = 0.15;
 
     internal static bool TryBuildBoundaryLap(IReadOnlyList<Point> sourceBoundary,
         double pitch, double centerlineClearance, out List<Point> route)
@@ -1044,8 +1045,9 @@ internal static class PerimeterSpiralCore
         offset = Clean(offset);
         // Clipper resolves the inset topology; then replace each sharp offset vertex
         // with an explicit circular fillet of the requested centerline bend radius.
+        // Keep the shallow chords of the round offset as one arc.
         if (offset.Count < 3 || !TryRoundPolyline(offset, cornerRadius,
-                1.0, closed: true, out result, Math.Min(10.0, cornerRadius * 0.5)))
+                20.0, closed: true, out result, Math.Min(10.0, cornerRadius * 0.5)))
             return false;
         if (SignedArea(result) < 0)
             result.Reverse();
@@ -1153,8 +1155,8 @@ internal static class PerimeterSpiralCore
             if (!double.IsFinite(maximumStep) || maximumStep <= Epsilon)
                 return false;
             int segments = Math.Max(1, (int)Math.Ceiling(Math.Abs(turns[i]) / maximumStep));
-            // Each tessellated arc chord becomes a Revit MEP curve. Keep every chord
-            // above Revit's 1/10 inch minimum; reduce subdivision only as needed.
+            // Keep the sampled route usable for downstream length and clearance
+            // checks even when it contains a very tight turn.
             while (segments > 1 &&
                    2.0 * radii[i] * Math.Sin(Math.Abs(turns[i]) / (2.0 * segments)) <
                    minimumSegmentLength - 1e-6)
@@ -1248,12 +1250,23 @@ internal static class PerimeterSpiralCore
         double minimumSeparation)
     {
         var station = new double[path.Count];
+        var bounds = new (double MinX, double MinY, double MaxX, double MaxY)[Math.Max(0, path.Count - 1)];
         for (int i = 1; i < path.Count; i++)
-            station[i] = station[i - 1] + Distance(path[i - 1], path[i]);
-
-        for (int i = 0; i + 1 < path.Count; i++)
-        for (int j = i + 2; j + 1 < path.Count; j++)
         {
+            station[i] = station[i - 1] + Distance(path[i - 1], path[i]);
+            Point a = path[i - 1], b = path[i];
+            bounds[i - 1] = (Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
+        }
+
+        for (int i = 0; i < bounds.Length; i++)
+        for (int j = i + 2; j < bounds.Length; j++)
+        {
+            var first = bounds[i];
+            var second = bounds[j];
+            // Disjoint expanded bounds rule out both a crossing and a clearance violation.
+            if (second.MinX - first.MaxX > minimumSeparation || first.MinX - second.MaxX > minimumSeparation ||
+                second.MinY - first.MaxY > minimumSeparation || first.MinY - second.MaxY > minimumSeparation)
+                continue;
             if (SegmentsCross(path[i], path[i + 1], path[j], path[j + 1]))
                 return false;
             // Nearby pieces of the same bend are connected intentionally.
@@ -1288,21 +1301,17 @@ internal static class PerimeterSpiralCore
         double minY = boundary.Min(point => point.Y), maxY = boundary.Max(point => point.Y);
         double sampleStep = Math.Max(50, pitch / 2.0);
         double maximumGap = pitch * 1.65;
-        double worstGap = 0;
+        var segmentBuckets = new SegmentBuckets<Point>(route.Zip(route.Skip(1), (a, b) => (a, b)),
+            point => (point.X, point.Y), PointSegmentDistanceSquared, maximumGap);
         for (double x = minX + sampleStep / 2; x < maxX; x += sampleStep)
         for (double y = minY + sampleStep / 2; y < maxY; y += sampleStep)
         {
             Point sample = new(x, y);
             if (!PointInside(boundary, sample) || DistanceToLoop(sample, boundary) < centerlineClearance)
                 continue;
-            double nearestSquared = double.PositiveInfinity;
-            for (int i = 0; i + 1 < route.Count; i++)
-                nearestSquared = Math.Min(nearestSquared,
-                    PointSegmentDistanceSquared(sample, route[i], route[i + 1]));
-            worstGap = Math.Max(worstGap, Math.Sqrt(nearestSquared));
+            if (Math.Sqrt(segmentBuckets.NearestSquared(sample, requireExactDistance: false)) > maximumGap)
+                return false;
         }
-        if (worstGap > maximumGap)
-            return false;
         return true;
     }
 
@@ -1394,9 +1403,12 @@ internal static class PerimeterSpiralCore
 
     private static bool SegmentsCross(Point a, Point b, Point c, Point d)
     {
-        double abC = Cross(b - a, c - a), abD = Cross(b - a, d - a);
-        double cdA = Cross(d - c, a - c), cdB = Cross(d - c, b - c);
-        return abC * abD < -1e-7 && cdA * cdB < -1e-7;
+        Point ab = b - a;
+        double abC = Cross(ab, c - a), abD = Cross(ab, d - a);
+        if (!(abC * abD < -1e-7))
+            return false;
+        Point cd = d - c;
+        return Cross(cd, a - c) * Cross(cd, b - c) < -1e-7;
     }
 
     private static List<Point> Clean(IEnumerable<Point> points)

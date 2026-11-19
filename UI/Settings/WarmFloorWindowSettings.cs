@@ -20,6 +20,16 @@ namespace Underfloor_heating_generator.UI.Settings
         public string AreaLayingHeight { get; set; }
         public string AreaWallOffset { get; set; }
         public string AreaPipeSpacing { get; set; }
+        public string AreaCollectorDistance { get; set; }
+        public string AreaMaximumLength { get; set; }
+        public string AreaMaximumArea { get; set; }
+        public string Theme { get; set; } = "System";
+        public int Scale { get; set; } = 100;
+        public bool RememberWindow { get; set; } = true;
+        public double? WindowWidth { get; set; }
+        public double? WindowHeight { get; set; }
+        public double? WindowLeft { get; set; }
+        public double? WindowTop { get; set; }
     }
 
     internal static class WarmFloorWindowSettingsStore

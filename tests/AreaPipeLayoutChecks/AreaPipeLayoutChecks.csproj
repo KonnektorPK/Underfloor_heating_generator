@@ -6,9 +6,13 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\Application\Models\FloorCircuitLimits.cs" Link="Production\FloorCircuitLimits.cs" />
+    <Compile Include="..\..\Infrastructure\Revit\FloorCircuitLayout.cs" Link="Production\FloorCircuitLayout.cs" />
     <Compile Include="..\..\Infrastructure\Geometry\RectangularSpiral.cs" Link="Production\RectangularSpiral.cs" />
+    <Compile Include="..\..\Infrastructure\Geometry\SegmentBuckets.cs" Link="Production\SegmentBuckets.cs" />
     <Compile Include="..\..\Infrastructure\Revit\AreaPipeLayout.cs" Link="Production\AreaPipeLayout.cs" />
     <Compile Include="..\..\Infrastructure\Revit\PerimeterSpiralCore.cs" Link="Production\PerimeterSpiralCore.cs" />
+    <Compile Include="..\..\Infrastructure\Revit\PipeFittingPath.cs" Link="Production\PipeFittingPath.cs" />
     <Compile Include="..\..\Revit\PluginDependencyResolver.cs" Link="Production\PluginDependencyResolver.cs" />
   </ItemGroup>
   <ItemGroup>

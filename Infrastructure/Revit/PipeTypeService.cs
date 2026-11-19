@@ -26,7 +26,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             ElementId fittingTypeId = null) //тип соединительной детали
         {
             return DrawPipes(points, pipeDiameter, levelOffset, pipeTypeId, levelId,
-                systemTypeId, null, null);
+                systemTypeId, null, null, collapseRoundedCorners: false);
         }
 
         public bool DrawPipesConnected(IList<XYZ> points, double pipeDiameter, double levelOffset,
@@ -34,30 +34,34 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             Pipe startPipe, Pipe endPipe)
         {
             return DrawPipes(points, pipeDiameter, levelOffset, pipeTypeId, levelId,
-                systemTypeId, startPipe, endPipe);
+                systemTypeId, startPipe, endPipe, collapseRoundedCorners: true);
         }
 
         private bool DrawPipes(IList<XYZ> points, double pipeDiameter, double levelOffset,
             ElementId pipeTypeId, ElementId levelId, ElementId systemTypeId,
-            Pipe startPipe, Pipe endPipe)
+            Pipe startPipe, Pipe endPipe, bool collapseRoundedCorners)
         {
             if (points == null || points.Count < 2) return false;
             double minimumPipeLength = Math.Max(doc.Application.ShortCurveTolerance,
                 (0.1 * 25.4) / 304.8);
-            double levelFloorHight = levelOffset / 304.8;
-            points = RemoveShortSegments(points.Select(point =>
-                point + new XYZ(0, 0, levelFloorHight)).ToList(), minimumPipeLength);
+            var verticalOffset = new XYZ(0, 0, levelOffset / 304.8);
+            points = points.Select(point => point + verticalOffset).ToList();
+            HashSet<XYZ> singleElbows = null;
+            if (collapseRoundedCorners)
+                points = PipeFittingPath.ToFittingVertices(points, out singleElbows);
+            points = RemoveShortSegments(points, minimumPipeLength);
             if (points.Count < 2)
                 return false;
+            if (singleElbows != null && !singleElbows.IsSubsetOf(points))
+                throw new InvalidOperationException("Недостаточно места для прямых участков до и после отвода.");
 
             using (Transaction transaction = new Transaction(doc, "Добавления труб с фитингами"))
             {
                 transaction.Start();
                 try
                 {
-                    //double levelFloorHight = ((doc.GetElement(levelId) as Level).Elevation + levelOffset / 304.8);
-                    Pipe previousPipe = null;
                     Connector previousConnector = null;
+                    XYZ previousStart = null;
                     Pipe firstPipe = null;
                     Pipe lastPipe = null;
                     for (int i = 0; i < points.Count - 1; i++)
@@ -79,6 +83,9 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
 
                         ConnectorSet connectorSet2 = nextPipe.ConnectorManager.Connectors;
                         Connector startConnector2 = ExtractPipeConnector(connectorSet2, startPoint);
+                        bool singleElbow = singleElbows?.Contains(startPoint) == true;
+                        if (singleElbow && (previousConnector == null || startConnector2 == null))
+                            throw new InvalidOperationException("Не удалось найти соединители для установки одного отвода.");
 
                         if (previousConnector != null && startConnector2 != null)
                         {
@@ -86,13 +93,20 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                             {
                                 doc.Create.NewElbowFitting(previousConnector, startConnector2);
                             }
-                            catch
+                            catch (Exception exception)
                             {
+                                if (singleElbow)
+                                {
+                                    double angle = (startPoint - previousStart).AngleTo(endPoint - startPoint) * 180 / Math.PI;
+                                    throw new InvalidOperationException(
+                                        $"Revit не смог установить один отвод на {angle:0.#}°. Проверьте настройки маршрутизации для выбранного типа и диаметра трубы. {exception.Message}",
+                                        exception);
+                                }
                                 previousConnector.ConnectTo(startConnector2);
                             }
                         }
 
-                        previousPipe = nextPipe;
+                        previousStart = startPoint;
                         lastPipe = nextPipe;
 
                         previousConnector = ExtractPipeConnector(connectorSet2, endPoint);
@@ -117,16 +131,15 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                         ConnectExternalConnectors(generated, target);
                     }
 
-                    transaction.Commit();
+                    return transaction.Commit() == TransactionStatus.Committed;
                 }
                 catch
                 {
-                    transaction.RollBack();
+                    if (transaction.GetStatus() == TransactionStatus.Started)
+                        transaction.RollBack();
                     throw;
                 }
             }
-
-            return true;
         }
 
         private static IList<XYZ> RemoveShortSegments(IList<XYZ> source, double minimumLength)

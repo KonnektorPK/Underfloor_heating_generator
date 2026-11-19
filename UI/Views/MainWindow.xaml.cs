@@ -20,7 +20,6 @@ namespace Underfloor_heating_generator.UI.Views
         private readonly RevitApiTaskQueue apiTaskQueue;
         private ElementOption selectedFloorArea;
         private ElementOption selectedStartPipe;
-        private ElementOption selectedEndPipe;
 
         public MainWindow(IWarmFloorOptionsProvider optionsProvider, IWarmFloorGenerator generator,
             IAreaWarmFloorGenerator areaGenerator, IFloorAreaPicker floorAreaPicker,
@@ -45,7 +44,17 @@ namespace Underfloor_heating_generator.UI.Views
             SelectDefault(WallOffset, 0);
             SelectDefault(PipeSpacing, 0);
 
-            RestoreSettings();
+            WarmFloorWindowSettings settings = WarmFloorWindowSettingsStore.Load();
+            RestoreSettings(settings);
+            InitializeAppearance(settings);
+            UpdateAvailability();
+            DrawingEmpty.Visibility = SelectDrawingDWG.HasItems ? Visibility.Collapsed : Visibility.Visible;
+            if (!PipeSelection.HasItems || !SystemTypePipe.HasItems)
+            {
+                string missing = !PipeSelection.HasItems ? "В модели нет доступных типов труб." : "В модели нет доступных систем труб.";
+                SetFieldError(PipeSelection.HasItems ? SystemTypePipe : PipeSelection, missing);
+                SetFieldError(PipeSelection.HasItems ? StubSystemTypePipe : StubPipeSelection, missing);
+            }
 
             if (!optionsProvider.HasActiveLevel)
                 ShowStatus("Активный вид не связан с уровнем. Переключитесь на план этажа.", false);
@@ -53,9 +62,8 @@ namespace Underfloor_heating_generator.UI.Views
 
         public void SetOwner(IntPtr ownerHandle) => new WindowInteropHelper(this).Owner = ownerHandle;
 
-        private void RestoreSettings()
+        private void RestoreSettings(WarmFloorWindowSettings settings)
         {
-            WarmFloorWindowSettings settings = WarmFloorWindowSettingsStore.Load();
             if (settings == null)
             {
                 SelectDefault(PipeDiametr, 0);
@@ -90,11 +98,23 @@ namespace Underfloor_heating_generator.UI.Views
                 if (settings.AreaLayingHeight != null) SetEditableValue(StubLayingHeight, settings.AreaLayingHeight);
                 if (settings.AreaWallOffset != null) SetEditableValue(WallOffset, settings.AreaWallOffset);
                 if (settings.AreaPipeSpacing != null) SetEditableValue(PipeSpacing, settings.AreaPipeSpacing);
+                if (!string.IsNullOrWhiteSpace(settings.AreaMaximumArea))
+                    MaximumAreaInput.Text = settings.AreaMaximumArea;
+                else
+                {
+                    CollectorDistanceInput.Text = settings.AreaCollectorDistance ?? "";
+                    MaximumLengthInput.Text = settings.AreaMaximumLength ?? "";
+                }
             }
         }
 
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            if (busy)
+            {
+                e.Cancel = true;
+                return;
+            }
             bool save = SaveChanges.IsChecked == true;
             bool saveArea = SaveAreaValues.IsChecked == true;
             var settings = new WarmFloorWindowSettings
@@ -102,6 +122,7 @@ namespace Underfloor_heating_generator.UI.Views
                 SaveValues = save,
                 SaveAreaValues = saveArea
             };
+            SaveAppearance(settings);
             if (save)
             {
                 settings.PipeTypeId = GetSelectedId(PipeSelection);
@@ -119,6 +140,9 @@ namespace Underfloor_heating_generator.UI.Views
                 settings.AreaLayingHeight = GetEditableValue(StubLayingHeight);
                 settings.AreaWallOffset = GetEditableValue(WallOffset);
                 settings.AreaPipeSpacing = GetEditableValue(PipeSpacing);
+                settings.AreaCollectorDistance = CollectorDistanceInput.Text;
+                settings.AreaMaximumLength = MaximumLengthInput.Text;
+                settings.AreaMaximumArea = MaximumAreaInput.Text;
             }
 
             try
@@ -187,51 +211,20 @@ namespace Underfloor_heating_generator.UI.Views
 
         private void CreateWarmFloor_Click(object sender, RoutedEventArgs e)
         {
-            WpfComboBox[] required = { PipeSelection, SystemTypePipe, SelectDrawingDWG, PipeDiametr, PipeLayingHeight };
-            bool valid = true;
-
-            foreach (WpfComboBox comboBox in required)
-            {
-                bool hasValue = comboBox.SelectedItem != null ||
-                    (comboBox.IsEditable && !string.IsNullOrWhiteSpace(comboBox.Text));
-                comboBox.BorderBrush = hasValue
-                    ? System.Windows.Media.Brushes.LightGray
-                    : System.Windows.Media.Brushes.OrangeRed;
-                valid &= hasValue;
-            }
-
-            if (!TryGetNumber(PipeDiametr, out double diameter) || diameter <= 0)
-            {
-                PipeDiametr.BorderBrush = System.Windows.Media.Brushes.OrangeRed;
-                valid = false;
-            }
-            if (!TryGetNumber(PipeLayingHeight, out double height))
-            {
-                PipeLayingHeight.BorderBrush = System.Windows.Media.Brushes.OrangeRed;
-                valid = false;
-            }
-
-            if (!valid)
-            {
-                ShowStatus("Ошибка валидации данных, проверьте значения.", false);
-                return;
-            }
-
+            firstInvalidField = null;
+            var drawing = SelectDrawingDWG.SelectedItem as ElementOption;
             var pipeType = PipeSelection.SelectedItem as ElementOption;
             var systemType = SystemTypePipe.SelectedItem as ElementOption;
-            var drawing = SelectDrawingDWG.SelectedItem as ElementOption;
-            if (pipeType == null || systemType == null || drawing == null)
-            {
-                ShowStatus("Выберите тип трубы, тип системы и чертеж на активном уровне.", false);
+            SetFieldError(SelectDrawingDWG, drawing == null ? "Выберите чертёж." : null);
+            SetFieldError(PipeSelection, pipeType == null ? "Выберите тип трубы." : null);
+            SetFieldError(SystemTypePipe, systemType == null ? "Выберите систему труб." : null);
+            SetFieldError(PipeDiametr, !TryGetNumber(PipeDiametr, out double diameter) || diameter <= 0 ? "Введите диаметр больше 0 мм." : null);
+            SetFieldError(PipeLayingHeight, !TryGetNumber(PipeLayingHeight, out double height) ? "Введите высоту в миллиметрах." : null);
+            if (!ShowValidation("Заполните выделенные поля."))
                 return;
-            }
-
             var request = new WarmFloorRequest(pipeType.Id, systemType.Id, drawing.Id, diameter, height,
                 AlignDirectionsCheckBox.IsChecked == true);
-            ProgressPanel.Visibility = Visibility.Visible;
-            ContourProgressBar.Value = 0;
-            ProgressPercent.Text = "0%";
-            CreateWarmFloor.IsEnabled = false;
+            StartOperation(showProgress: true);
             if (!apiTaskQueue.TrySchedule(application =>
             {
                 try
@@ -256,12 +249,12 @@ namespace Underfloor_heating_generator.UI.Views
                 }
                 finally
                 {
-                    Dispatcher.BeginInvoke(new Action(() => CreateWarmFloor.IsEnabled = true));
+                    Dispatcher.BeginInvoke(new Action(FinishOperation));
                 }
             }, out string scheduleError))
             {
                 ShowStatus(scheduleError, false);
-                CreateWarmFloor.IsEnabled = true;
+                FinishOperation();
             }
         }
 
@@ -292,7 +285,9 @@ namespace Underfloor_heating_generator.UI.Views
                     {
                         selectedFloorArea = pickedArea;
                         SelectedFloorAreaText.Text = "Выбрано: " + selectedFloorArea.Name;
-                        ShowStatus("Область выбрана.", true);
+                        SetFieldError(SelectFloorAreaButton, null);
+                        Announce(SelectedFloorAreaText);
+                        HideStatus();
                     }
                     else if (error != null)
                         ShowStatus(error, false);
@@ -300,6 +295,7 @@ namespace Underfloor_heating_generator.UI.Views
                     SelectFloorAreaButton.IsEnabled = true;
                     Show();
                     Activate();
+                    if (sender is Button source) source.Focus();
                 }));
             }, out string scheduleError))
             {
@@ -312,15 +308,11 @@ namespace Underfloor_heating_generator.UI.Views
 
         private void SelectPipeEndpoint_Click(object sender, RoutedEventArgs e)
         {
-            bool isStart = string.Equals((sender as FrameworkElement)?.Tag?.ToString(), "Start",
-                StringComparison.Ordinal);
             Button button = sender as Button;
             if (button != null) button.IsEnabled = false;
             Hide();
 
-            string prompt = isStart
-                ? "Выберите трубу, от которой начнется спираль."
-                : "Выберите трубу, к которой присоединится конец спирали.";
+            const string prompt = "Выберите трубу, которая задаёт сторону выводов тёплого пола.";
             if (!apiTaskQueue.TrySchedule(application =>
             {
                 ElementOption pickedPipe = null;
@@ -342,17 +334,11 @@ namespace Underfloor_heating_generator.UI.Views
                 {
                     if (pickedPipe != null)
                     {
-                        if (isStart)
-                        {
-                            selectedStartPipe = pickedPipe;
-                            SelectedStartPipeText.Text = "Выбрано: " + pickedPipe.Name;
-                        }
-                        else
-                        {
-                            selectedEndPipe = pickedPipe;
-                            SelectedEndPipeText.Text = "Выбрано: " + pickedPipe.Name;
-                        }
-                        ShowStatus("Труба выбрана.", true);
+                        selectedStartPipe = pickedPipe;
+                        SelectedStartPipeText.Text = "Выбрано: " + pickedPipe.Name;
+                        SetFieldError(SelectStartPipeButton, null);
+                        Announce(SelectedStartPipeText);
+                        HideStatus();
                     }
                     else if (error != null)
                         ShowStatus(error, false);
@@ -360,6 +346,7 @@ namespace Underfloor_heating_generator.UI.Views
                     if (button != null) button.IsEnabled = true;
                     Show();
                     Activate();
+                    if (sender is Button source) source.Focus();
                 }));
             }, out string scheduleError))
             {
@@ -370,66 +357,84 @@ namespace Underfloor_heating_generator.UI.Views
             }
         }
 
+        private void CircuitLimits_Changed(object sender, TextChangedEventArgs e)
+        {
+            if (CollectorDistanceInput == null || MaximumLengthInput == null || MaximumAreaInput == null || LimitsHint == null)
+                return;
+            bool areaEntered = !string.IsNullOrWhiteSpace(MaximumAreaInput.Text);
+            bool lengthEntered = !string.IsNullOrWhiteSpace(CollectorDistanceInput.Text) ||
+                !string.IsNullOrWhiteSpace(MaximumLengthInput.Text);
+            CollectorDistanceInput.IsEnabled = !areaEntered;
+            MaximumLengthInput.IsEnabled = !areaEntered;
+            MaximumAreaInput.IsEnabled = !lengthEntered;
+            LimitsHint.Text = areaEntered
+                ? "Чтобы перейти к расчёту по длине, очистите поле площади."
+                : lengthEntered
+                    ? "Чтобы перейти к расчёту по площади, очистите оба поля длины."
+                    : "Задайте площадь или укажите расстояние до коллектора и предельную длину контура.";
+            if (!CollectorDistanceInput.IsEnabled) SetFieldError(CollectorDistanceInput, null);
+            if (!MaximumLengthInput.IsEnabled) SetFieldError(MaximumLengthInput, null);
+            if (!MaximumAreaInput.IsEnabled) SetFieldError(MaximumAreaInput, null);
+        }
+
+        private static double? ReadCircuitNumber(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+            return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out double value) ||
+                double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                ? value : double.NaN;
+        }
+
         private void CreateAreaWarmFloor_Click(object sender, RoutedEventArgs e)
         {
-            if (selectedFloorArea == null)
-            {
-                ShowStatus("Сначала выберите помещение или цветовую область на плане.", false);
-                return;
-            }
-            if (selectedStartPipe == null || selectedEndPipe == null)
-            {
-                ShowStatus("Выберите начальную и конечную трубу для подключения змейки.", false);
-                return;
-            }
-            if (selectedStartPipe.Id.Value == selectedEndPipe.Id.Value)
-            {
-                ShowStatus("Начальной и конечной должны быть разные трубы.", false);
-                return;
-            }
-
-            bool valid = true;
-            WpfComboBox[] required =
-            {
-                StubPipeSelection, StubSystemTypePipe, StubPipeDiameter, StubLayingHeight, WallOffset, PipeSpacing
-            };
-            foreach (WpfComboBox comboBox in required)
-            {
-                bool hasValue = comboBox.SelectedItem != null ||
-                    (comboBox.IsEditable && !string.IsNullOrWhiteSpace(comboBox.Text));
-                comboBox.BorderBrush = hasValue
-                    ? System.Windows.Media.Brushes.LightGray
-                    : System.Windows.Media.Brushes.OrangeRed;
-                valid &= hasValue;
-            }
-
-            bool diameterValid = TryGetNumber(StubPipeDiameter, out double diameter) && diameter > 0;
-            bool heightValid = TryGetNumber(StubLayingHeight, out double height);
-            bool edgeValid = TryGetNumber(WallOffset, out double wallOffset) && wallOffset >= 0;
-            bool spacingValid = TryGetNumber(PipeSpacing, out double spacing) && spacing > 0;
-            if (!diameterValid) StubPipeDiameter.BorderBrush = System.Windows.Media.Brushes.OrangeRed;
-            if (!heightValid) StubLayingHeight.BorderBrush = System.Windows.Media.Brushes.OrangeRed;
-            if (!edgeValid) WallOffset.BorderBrush = System.Windows.Media.Brushes.OrangeRed;
-            if (!spacingValid) PipeSpacing.BorderBrush = System.Windows.Media.Brushes.OrangeRed;
-            valid &= diameterValid && heightValid && edgeValid && spacingValid && spacing > diameter;
+            firstInvalidField = null;
+            SetFieldError(SelectFloorAreaButton, selectedFloorArea == null ? "Выберите область на плане Revit." : null);
+            SetFieldError(SelectStartPipeButton, selectedStartPipe == null ? "Укажите трубу, которая задаёт сторону выводов." : null);
 
             var pipeType = StubPipeSelection.SelectedItem as ElementOption;
             var systemType = StubSystemTypePipe.SelectedItem as ElementOption;
-            valid &= pipeType != null && systemType != null;
-            if (!valid)
+            SetFieldError(StubPipeSelection, pipeType == null ? "Выберите тип трубы." : null);
+            SetFieldError(StubSystemTypePipe, systemType == null ? "Выберите систему труб." : null);
+            bool diameterValid = TryGetNumber(StubPipeDiameter, out double diameter) && diameter > 0;
+            SetFieldError(StubPipeDiameter, diameterValid ? null : "Введите диаметр больше 0 мм.");
+            SetFieldError(StubLayingHeight, !TryGetNumber(StubLayingHeight, out double height) ? "Введите высоту в миллиметрах." : null);
+            SetFieldError(WallOffset, !TryGetNumber(WallOffset, out double wallOffset) || wallOffset < 0 ? "Введите отступ не меньше 0 мм." : null);
+            SetFieldError(PipeSpacing, !TryGetNumber(PipeSpacing, out double spacing) || spacing <= 0 ||
+                (diameterValid && spacing <= diameter) ? "Шаг должен быть больше диаметра трубы." : null);
+
+            var limits = new FloorCircuitLimits(ReadCircuitNumber(CollectorDistanceInput.Text),
+                ReadCircuitNumber(MaximumLengthInput.Text), ReadCircuitNumber(MaximumAreaInput.Text));
+            string limitError = limits.GetValidationError();
+            SetFieldError(CollectorDistanceInput, null);
+            SetFieldError(MaximumLengthInput, null);
+            SetFieldError(MaximumAreaInput, null);
+            if (limitError != null)
             {
-                ShowStatus("Проверьте параметры. Шаг укладки должен быть больше диаметра трубы.", false);
-                return;
+                if (limits.MaximumAreaSquareMeters.HasValue)
+                    SetFieldError(MaximumAreaInput, "Введите площадь больше 0 м².");
+                else if (limits.CollectorDistanceMeters.HasValue || limits.MaximumLengthMeters.HasValue)
+                {
+                    if (limits.CollectorDistanceMeters is not double distance || !double.IsFinite(distance) || distance < 0)
+                        SetFieldError(CollectorDistanceInput, "Введите расстояние не меньше 0 м.");
+                    if (limits.MaximumLengthMeters is not double length || !double.IsFinite(length) || length <= 0)
+                        SetFieldError(MaximumLengthInput, "Введите длину больше 0 м.");
+                    else if (limits.CollectorDistanceMeters is double reserve && length <= 2 * reserve)
+                        SetFieldError(MaximumLengthInput, "Длина должна быть больше удвоенного расстояния до коллектора.");
+                }
+                else
+                    SetFieldError(CollectorDistanceInput, "Заполните оба поля длины или укажите площадь.");
             }
 
-            CreateAreaWarmFloor.IsEnabled = false;
+            if (!ShowValidation("Заполните выделенные поля."))
+                return;
+            var request = new AreaWarmFloorRequest(selectedFloorArea.Id,
+                selectedStartPipe.Id, pipeType.Id, systemType.Id, diameter, height, wallOffset, spacing, limits);
+            StartOperation(showProgress: false);
             if (!apiTaskQueue.TrySchedule(application =>
             {
                 try
                 {
-                    var request = new AreaWarmFloorRequest(selectedFloorArea.Id,
-                        selectedStartPipe.Id, selectedEndPipe.Id, pipeType.Id, systemType.Id,
-                        diameter, height, wallOffset, spacing);
                     WorkflowResult result = areaGenerator.GenerateOnArea(request);
                     Dispatcher.BeginInvoke(new Action(() => ShowStatus(result.Message, result.Succeeded)));
                 }
@@ -440,12 +445,12 @@ namespace Underfloor_heating_generator.UI.Views
                 }
                 finally
                 {
-                    Dispatcher.BeginInvoke(new Action(() => CreateAreaWarmFloor.IsEnabled = true));
+                    Dispatcher.BeginInvoke(new Action(FinishOperation));
                 }
             }, out string scheduleError))
             {
                 ShowStatus(scheduleError, false);
-                CreateAreaWarmFloor.IsEnabled = true;
+                FinishOperation();
             }
         }
 
@@ -457,12 +462,15 @@ namespace Underfloor_heating_generator.UI.Views
             Dispatcher.PushFrame(frame);
         }
 
-        private void ShowStatus(string message, bool succeeded)
+        private void ShowStatus(string message, bool? succeeded)
         {
+            StatusPanel.Visibility = Visibility.Visible;
+            StatusTitle.Text = succeeded switch { true => "Готово", false => "Требуется внимание", null => "Построение" };
+            StatusTitle.SetResourceReference(TextBlock.ForegroundProperty,
+                succeeded switch { true => "Success", false => "Danger", null => "Ink" });
             StatusText.Text = message;
-            StatusText.Foreground = succeeded
-                ? System.Windows.Media.Brushes.DarkGreen
-                : System.Windows.Media.Brushes.Firebrick;
+            Footer.InvalidateMeasure();
+            Announce(StatusText);
         }
 
         private static bool TryGetNumber(WpfComboBox comboBox, out double value)
@@ -470,8 +478,8 @@ namespace Underfloor_heating_generator.UI.Views
             string text = comboBox.SelectedItem is ComboBoxItem item
                 ? item.Content?.ToString()
                 : comboBox.Text;
-            return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value) ||
-                   double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+            return (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value) ||
+                   double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) && double.IsFinite(value);
         }
     }
 }

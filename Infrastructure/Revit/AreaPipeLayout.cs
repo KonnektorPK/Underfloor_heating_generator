@@ -13,6 +13,9 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
         private const double MillimetersPerFoot = 304.8;
         private const double Epsilon = 1e-7;
         private const int MaximumCells = 50000;
+        private const double WallOffsetTolerance = 0.02;
+        private const double WallMeasurementToleranceMillimeters = 0.01;
+        private const double SegmentGeometryToleranceMillimeters = 0.25;
 
         internal static IList<XYZ> CreateSpiralPath(IList<IList<XYZ>> boundaryLoops,
             double spacingMillimeters, double edgeOffsetMillimeters, double pipeDiameterMillimeters,
@@ -44,10 +47,9 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             IList<XYZ> preferredPath = CreateForOrientation(boundaryLoops, spacingMillimeters,
                 edgeOffsetMillimeters, pipeDiameterMillimeters, levelElevationFeet,
                 layingHeightMillimeters, startConnection, startDirection, endConnection,
-                endDirection, preferred.Angle, out _, out double preferredEdgeExcess);
-            double allowedEdgeExcess = Math.Max(5.0, edgeOffsetMillimeters * 0.15);
+                endDirection, preferred.Angle, out _, out _);
             if (preferredPath.Count > 0 && PathFollowsOrientation(preferredPath,
-                    preferred.Angle, spacingMillimeters) && preferredEdgeExcess <= allowedEdgeExcess)
+                    preferred.Angle, spacingMillimeters))
                 return preferredPath;
 
             // Only try alternate axes when the geometry cannot be routed on its primary
@@ -60,11 +62,11 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 IList<XYZ> candidate = CreateForOrientation(boundaryLoops, spacingMillimeters,
                     edgeOffsetMillimeters, pipeDiameterMillimeters, levelElevationFeet,
                     layingHeightMillimeters, startConnection, startDirection, endConnection,
-                    endDirection, orientation.Angle, out _, out double edgeExcess);
+                    endDirection, orientation.Angle, out _, out _);
                 if (candidate.Count > 0 && firstFallback.Count == 0)
                     firstFallback = candidate;
                 if (candidate.Count > 0 && PathFollowsOrientation(candidate,
-                        orientation.Angle, spacingMillimeters) && edgeExcess <= allowedEdgeExcess)
+                        orientation.Angle, spacingMillimeters))
                     return candidate;
             }
             return firstFallback ?? new List<XYZ>();
@@ -108,76 +110,105 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             var startDir = Normalize(ToLocalVector(startDirection, angle));
             var endDir = Normalize(ToLocalVector(endDirection, angle));
             double nominalOffset = Math.Max(0, edgeOffsetMillimeters);
+            double offsetTolerance = nominalOffset * WallOffsetTolerance;
+            double minimumClearance = nominalOffset - offsetTolerance + pipeDiameterMillimeters / 2.0;
+            double maximumWallOffset = nominalOffset + offsetTolerance;
             double[] offsetFactors = nominalOffset > Epsilon
-                ? new[] { 1.0, 0.9, 1.1 }
+                ? new[] { 1.0, 1.0 - WallOffsetTolerance, 1.0 + WallOffsetTolerance }
                 : new[] { 1.0 };
             double maximumPitchFactor = loops.Count == 1 && IsAxisAlignedRectangle(loops[0])
                 ? RectangularSpiral.MaximumPitchFactor
                 : 1.1;
-            double[] spacingFactors = { 1.0, 0.9, maximumPitchFactor };
+            bool orthogonalRecesses = loops.Count == 1 && loops[0].Count > 4 && IsAxisAligned(loops[0]);
+            bool preferBoundaryLap = loops.Count == 1 && !orthogonalRecesses && HasConcaveCorner(loops[0]);
+            double[] spacingFactors = loops.Count > 1 || orthogonalRecesses
+                ? new[] { 1.0, 0.9, maximumPitchFactor, 0.94, 1.06, 0.97, 1.03, 0.88, 1.08, 0.92 }
+                : new[] { 1.0, 0.9, maximumPitchFactor };
             IList<XYZ> bestResult = new List<XYZ>();
             double bestCoverage = double.NegativeInfinity;
             double bestEdgeExcess = double.PositiveInfinity;
             double bestDeviation = double.PositiveInfinity;
-            double maximumWallOffset = nominalOffset > Epsilon ? nominalOffset * 1.15 : 15.0;
-            double edgeExcessTolerance = Math.Max(5.0, nominalOffset * 0.05);
+            double preferredCoverageGap = spacingMillimeters * (orthogonalRecesses ? 0.85 : 1.65);
 
-            foreach (double spacingFactor in spacingFactors)
-            foreach (double offsetFactor in offsetFactors)
+            // The finer grid search is only needed when the usual pitches give no
+            // route within the setback tolerance.
+            for (int spacingIndex = 0; spacingIndex < spacingFactors.Length; spacingIndex++)
             {
-                double edgeOffset = nominalOffset * offsetFactor;
-                double clearance = edgeOffset + pipeDiameterMillimeters / 2.0;
-                double allowedEdgeExcess = Math.Max(0, maximumWallOffset - edgeOffset);
-                double pitch = spacingMillimeters * spacingFactor;
-                IList<XYZ> candidate = TryCreateCandidate(loops, pitch, edgeOffset,
-                    pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
-                    startConnection, endConnection, start, startDir, end, endDir, angle,
-                    out double coverage, out double edgeExcess, out bool usedRectangularSpiral,
-                    allowRectangularPitchAdjustment: spacingFactor == 1.0);
-                if (candidate.Count == 0)
-                    continue;
+                if (spacingIndex >= 3 && bestResult.Count > 0 && 1.0 / bestCoverage - 1.0 <= preferredCoverageGap)
+                    break;
+                double spacingFactor = spacingFactors[spacingIndex];
+                foreach (double offsetFactor in offsetFactors)
+                {
+                    double edgeOffset = nominalOffset * offsetFactor;
+                    double allowedEdgeExcess = maximumWallOffset - edgeOffset + WallMeasurementToleranceMillimeters;
+                    double pitch = spacingMillimeters * spacingFactor;
+                    // A deep oblique recess can split the offset rings. Keep
+                    // the outer lap and fill the connected interior first.
+                    bool tryBoundaryLapFirst = preferBoundaryLap && spacingIndex == 0 && offsetFactor == 1.0;
+                    IList<XYZ> candidate = TryCreateCandidate(loops, pitch, edgeOffset,
+                        pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                        startConnection, endConnection, start, startDir, end, endDir, angle,
+                        out double coverage, out double edgeExcess, out bool usedRectangularSpiral,
+                        allowPerimeterSpiral: !orthogonalRecesses && !tryBoundaryLapFirst,
+                        forceBoundaryLap: tryBoundaryLapFirst,
+                        allowRectangularPitchAdjustment: spacingFactor == 1.0, minimumClearance: minimumClearance,
+                        referencePitch: spacingMillimeters);
+                    if (orthogonalRecesses && spacingIndex == 0 && offsetFactor == 1.0 &&
+                        (candidate.Count == 0 || edgeExcess > allowedEdgeExcess ||
+                         1.0 / coverage - 1.0 > preferredCoverageGap))
+                    {
+                        for (int entryRank = 1; entryRank <= 4 &&
+                            (candidate.Count == 0 || edgeExcess > allowedEdgeExcess ||
+                             1.0 / coverage - 1.0 > preferredCoverageGap); entryRank++)
+                        {
+                            IList<XYZ> entryCandidate = TryCreateCandidate(loops, pitch, edgeOffset,
+                                pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                                startConnection, endConnection, start, startDir, end, endDir, angle,
+                                out double entryCoverage, out double entryEdgeExcess, out _,
+                                allowPerimeterSpiral: false, minimumClearance: minimumClearance,
+                                gridEntryRank: entryRank, referencePitch: spacingMillimeters);
+                            if (entryCandidate.Count == 0 || entryEdgeExcess > allowedEdgeExcess ||
+                                (candidate.Count > 0 && edgeExcess <= allowedEdgeExcess && coverage >= entryCoverage))
+                                continue;
+                            candidate = entryCandidate;
+                            coverage = entryCoverage;
+                            edgeExcess = entryEdgeExcess;
+                        }
+                    }
+                    if ((tryBoundaryLapFirst || orthogonalRecesses && spacingIndex == 0 && offsetFactor == 1.0) &&
+                        (candidate.Count == 0 || edgeExcess > allowedEdgeExcess))
+                    {
+                        candidate = TryCreateCandidate(loops, pitch, edgeOffset,
+                            pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                            startConnection, endConnection, start, startDir, end, endDir, angle,
+                            out coverage, out edgeExcess, out usedRectangularSpiral,
+                            minimumClearance: minimumClearance, referencePitch: spacingMillimeters);
+                    }
+                    if (candidate.Count == 0 || edgeExcess > allowedEdgeExcess)
+                        continue;
 
-                double deviation = Math.Abs(edgeOffset - nominalOffset) +
-                    Math.Abs(pitch - spacingMillimeters);
-                bool candidateWithinOffset = edgeExcess <= allowedEdgeExcess;
-                bool previousWithinOffset = bestEdgeExcess <= allowedEdgeExcess;
-                bool better;
-                if (bestResult.Count == 0)
-                {
-                    better = true;
-                }
-                else if (candidateWithinOffset != previousWithinOffset)
-                {
-                    better = bestResult.Count == 0 || candidateWithinOffset;
-                }
-                else if (!candidateWithinOffset &&
-                    Math.Abs(edgeExcess - bestEdgeExcess) > edgeExcessTolerance)
-                {
-                    better = edgeExcess < bestEdgeExcess;
-                }
-                else
-                {
-                    double coverageTolerance = Math.Max(1e-8,
-                        Math.Max(Math.Abs(coverage), Math.Abs(bestCoverage)) * 0.01);
-                    better = coverage > bestCoverage + coverageTolerance ||
+                    double deviation = Math.Abs(edgeOffset - nominalOffset) +
+                        Math.Abs(pitch - spacingMillimeters);
+                    double coverageTolerance = Math.Max(1e-8, Math.Abs(coverage) * 0.01);
+                    bool better = bestResult.Count == 0 || coverage > bestCoverage + coverageTolerance ||
                         (Math.Abs(coverage - bestCoverage) <= coverageTolerance && deviation < bestDeviation);
-                }
-                if (better)
-                {
-                    bestResult = candidate;
-                    bestCoverage = coverage;
-                    bestEdgeExcess = edgeExcess;
-                    bestDeviation = deviation;
-                }
+                    if (better)
+                    {
+                        bestResult = candidate;
+                        bestCoverage = coverage;
+                        bestEdgeExcess = edgeExcess;
+                        bestDeviation = deviation;
+                    }
 
-                double largestGap = coverage > 0 ? (1.0 / coverage) - 1.0 :
-                    double.PositiveInfinity;
-                if (spacingFactor == 1.0 && offsetFactor == 1.0 &&
-                    candidateWithinOffset && (usedRectangularSpiral || largestGap <= pitch * 1.65))
-                {
-                    overallCoverage = coverage;
-                    overallEdgeExcess = edgeExcess;
-                    return candidate;
+                    double largestGap = coverage > 0 ? (1.0 / coverage) - 1.0 :
+                        double.PositiveInfinity;
+                    if (spacingFactor == 1.0 && offsetFactor == 1.0 &&
+                        (usedRectangularSpiral || largestGap <= preferredCoverageGap))
+                    {
+                        overallCoverage = coverage;
+                        overallEdgeExcess = edgeExcess;
+                        return candidate;
+                    }
                 }
             }
 
@@ -328,31 +359,30 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 double length = endAnchor.Position - startAnchor.Position;
                 int minimumCount = Math.Max(1, (int)Math.Ceiling(length / maxPitch - 1e-9));
                 int maximumCount = (int)Math.Floor(length / minPitch + 1e-9);
-                // A start-side anchor (parity 0) owns the first cell to its right; an
-                // end-side anchor (parity 1) owns the final cell to its left. The other side
-                // may start a new local pairing, which avoids forcing a whole extra interval
-                // through every narrow opening merely to preserve a global grid phase.
-                int requiredCountParity = endAnchor.Parity == 1
-                    ? (startAnchor.Parity == 0 ? 1 : 0)
-                    : -1;
+                // Exactly one span owns the cell next to each anchor. If both
+                // spans end/start a cell at the same coordinate, the trace
+                // retraces a pipe along the shared edge.
+                int requiredCountParity = startAnchor.Parity ^ endAnchor.Parity;
                 int count = minimumCount <= maximumCount
                     ? Enumerable.Range(minimumCount, maximumCount - minimumCount + 1)
-                        .Where(candidate => requiredCountParity < 0 || candidate % 2 == requiredCountParity)
+                        .Where(candidate => candidate % 2 == requiredCountParity)
                         .OrderBy(candidate => Math.Abs(length / candidate - nominalPitch))
                         .FirstOrDefault()
                     : 0;
 
-                // Parity can make an otherwise valid narrow span impossible. In that case,
-                // keep the maximum spacing bounded to +15% and add tighter runs rather than
-                // dropping an entire wall/opening offset row and leaving a cold strip.
+                // A short span between two recess walls may not have an integer
+                // count of nominal intervals with the required pairing. Keep
+                // the wall anchors and pick the closest physically safe spacing
+                // for this span only.
                 if (count == 0)
                 {
-                    double denseMinimumPitch = Math.Max(pipeDiameter + 0.1, nominalPitch * 0.85);
-                    int denseMaximumCount = (int)Math.Floor(length / denseMinimumPitch + 1e-9);
-                    if (minimumCount > denseMaximumCount)
+                    double minimumLocalPitch = pipeDiameter + 2;
+                    int localMinimumCount = Math.Max(1, (int)Math.Ceiling(length / (nominalPitch * 1.25) - 1e-9));
+                    int localMaximumCount = (int)Math.Floor(length / minimumLocalPitch + 1e-9);
+                    if (localMinimumCount > localMaximumCount)
                         return new List<AxisCellRange>();
-                    count = Enumerable.Range(minimumCount, denseMaximumCount - minimumCount + 1)
-                        .Where(candidate => requiredCountParity < 0 || candidate % 2 == requiredCountParity)
+                    count = Enumerable.Range(localMinimumCount, localMaximumCount - localMinimumCount + 1)
+                        .Where(candidate => candidate % 2 == requiredCountParity)
                         .OrderBy(candidate => Math.Abs(length / candidate - nominalPitch))
                         .FirstOrDefault();
                 }
@@ -390,7 +420,8 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             out double coverage, out double edgeExcess, out bool usedRectangularSpiral,
             bool allowPerimeterSpiral = true,
             int boundaryJoinOrder = 0, bool forceBoundaryLap = false,
-            bool allowRectangularSpiral = true, bool allowRectangularPitchAdjustment = true)
+            bool allowRectangularSpiral = true, bool allowRectangularPitchAdjustment = true,
+            double minimumClearance = 0, int gridEntryRank = 0, double referencePitch = 0)
         {
             coverage = 0;
             edgeExcess = double.PositiveInfinity;
@@ -431,11 +462,9 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 }
             }
 
-            // Keep a single-loop area on the perimeter algorithm; do not silently
-            // switch this case to the legacy cell-grid route.
-            if (loops.Count == 1 && !usedPerimeterSpiral)
-                return new List<XYZ>();
-
+            // Orthogonal recesses may split an inset while still allowing a connected
+            // circuit. The wall-aligned grid can cover those branches.
+            bool canUseOrthogonalFallback = loops.Count == 1 && IsAxisAligned(loops[0]);
             if (!usedPerimeterSpiral && (allowPerimeterSpiral || forceBoundaryLap))
             {
                 outerBoundary = loops.Count == 1 ? loops[0] : FindSingleOuterBoundary(loops);
@@ -470,30 +499,40 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     }
                 }
             }
+            if (loops.Count == 1 && !usedPerimeterSpiral && !canUseOrthogonalFallback && !usedBoundaryPrefix)
+                return new List<XYZ>();
 
             if (!usedPerimeterSpiral)
             {
                 List<GridCell> cells = BuildCells(loops, spacingMillimeters,
                     pipeDiameterMillimeters, clearance, out edgeExcess, outerBoundary,
-                    usedBoundaryPrefix ? clearance + perimeterLaps * pitch : 0);
+                    usedBoundaryPrefix ? clearance + perimeterLaps * pitch : 0,
+                    referencePitch * RectangularSpiral.MinimumPitchFactor - 0.5);
                 if (cells.Count == 0)
                 {
                     if (usedBoundaryPrefix)
                         return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
                             pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
                             startConnection, endConnection, start, startDir, end, endDir, angle,
-                            out coverage, out edgeExcess);
+                            out coverage, out edgeExcess, minimumClearance, referencePitch);
                     return new List<XYZ>();
                 }
 
                 GridCell entry = null;
                 int entrySide = -1;
-                double entryScore = double.PositiveInfinity;
-                Point2 entryPreference = usedBoundaryPrefix ? boundaryLap[boundaryLap.Count - 1] : start;
+                var entries = new List<(GridCell Cell, int Side, double Score)>();
+                Point2 entryPreference = usedBoundaryPrefix ? boundaryLap[boundaryLap.Count - 1] :
+                    Dot(startDir, endDir) > 0.95 ? (start + end) / 2 : start;
                 foreach (GridCell cell in cells)
                 {
                     for (int side = 0; side < 4; side++)
                     {
+                        GridCell acrossSide = side switch
+                        {
+                            0 => cell.Down, 1 => cell.Right, 2 => cell.Up, _ => cell.Left
+                        };
+                        if (acrossSide != null)
+                            continue;
                         Point2 normal = SideNormal(side);
                         Point2 midpoint = SideMidpoint(cell, side);
                         double edgeDepth = DistanceToBoundary(loops, midpoint);
@@ -506,13 +545,14 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
 
                         double score = midpoint.DistanceSquaredTo(entryPreference) -
                             (usedBoundaryPrefix ? 0 : facing * 0.1);
-                        if (score < entryScore)
-                        {
-                            entry = cell;
-                            entrySide = side;
-                            entryScore = score;
-                        }
+                        entries.Add((cell, side, score));
                     }
+                }
+                if (gridEntryRank < entries.Count)
+                {
+                    var choice = entries.OrderBy(item => item.Score).ElementAt(gridEntryRank);
+                    entry = choice.Cell;
+                    entrySide = choice.Side;
                 }
                 if (entry == null)
                 {
@@ -520,7 +560,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                         return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
                             pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
                             startConnection, endConnection, start, startDir, end, endDir, angle,
-                            out coverage, out edgeExcess);
+                            out coverage, out edgeExcess, minimumClearance, referencePitch);
                     return new List<XYZ>();
                 }
                 BuildAdjacency(cells);
@@ -532,7 +572,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                         return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
                             pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
                             startConnection, endConnection, start, startDir, end, endDir, angle,
-                            out coverage, out edgeExcess);
+                            out coverage, out edgeExcess, minimumClearance, referencePitch);
                     return new List<XYZ>();
                 }
 
@@ -546,7 +586,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                         return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
                             pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
                             startConnection, endConnection, start, startDir, end, endDir, angle,
-                            out coverage, out edgeExcess);
+                            out coverage, out edgeExcess, minimumClearance, referencePitch);
                     }
                     edgeExcess = 0;
                 }
@@ -558,21 +598,15 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
                         pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
                         startConnection, endConnection, start, startDir, end, endDir, angle,
-                        out coverage, out edgeExcess);
+                        out coverage, out edgeExcess, minimumClearance, referencePitch);
                 return new List<XYZ>();
             }
-            // The prototype is produced from exact inward polygon offsets and has already
-            // passed sampled clearance checks. The wall-parallel scanner misses short
-            // bevel fragments and was incorrectly forcing a full orientation sweep.
-            double baseEdgeExcess = usedPerimeterSpiral
-                ? 0
-                : Math.Max(edgeExcess, ComputeBoundaryOffsetExcess(loops, loopPath,
-                    edgeOffsetMillimeters, pipeDiameterMillimeters, pitch));
-
             List<Point2> bestPath = null;
             double bestScore = double.PositiveInfinity;
             double bestBodyCoverage = 0;
-            double bestPathEdgeExcess = baseEdgeExcess;
+            double bestPathEdgeExcess = double.PositiveInfinity;
+            double requiredClearance = Math.Max(clearance,
+                minimumClearance + SegmentGeometryToleranceMillimeters - WallMeasurementToleranceMillimeters);
             List<List<Point2>> innerLoops = GetInnerLoops(loops);
             for (int orientation = 0; orientation < 2; orientation++)
             {
@@ -590,7 +624,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 bool loopIsSafe = true;
                 for (int i = 0; i + 1 < orientedLoop.Count; i++)
                 {
-                    if (IsSafeSegment(loops, orientedLoop[i], orientedLoop[i + 1], clearance))
+                    if (IsSafeSegment(loops, orientedLoop[i], orientedLoop[i + 1], requiredClearance))
                         continue;
                     loopIsSafe = false;
                     break;
@@ -599,20 +633,21 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 {
                     continue;
                 }
+                if (!HasLongRunPitch(orientedLoop, referencePitch > 0 ? referencePitch : spacingMillimeters))
+                    continue;
 
                 Point2 loopStart = orientedLoop[0];
                 Point2 loopEnd = orientedLoop[orientedLoop.Count - 1];
                 double bodyCoverage = ComputeCoverageQuality(loops, orientedLoop, clearance, pitch);
-                double bodyEdgeExcess = usedPerimeterSpiral
-                    ? baseEdgeExcess
-                    : Math.Max(baseEdgeExcess, ComputeBoundaryOffsetExcess(loops,
-                        orientedLoop, edgeOffsetMillimeters, pipeDiameterMillimeters, pitch));
+                double bodyEdgeExcess = ComputeBoundaryOffsetExcess(loops, orientedLoop,
+                    edgeOffsetMillimeters, pipeDiameterMillimeters, pitch);
+                bool oppositeLeads = Dot(startDir, endDir) < -0.95;
                 List<List<Point2>> startRoutes = BuildConnectorRoutes(loopStart, start,
                     startDir, orientedLoop, atStart: true, innerLoops, clearance,
-                    pipeDiameterMillimeters, pitch, leadOutward);
+                    pipeDiameterMillimeters, pitch, leadOutward, oppositeLeads);
                 List<List<Point2>> endRoutes = BuildConnectorRoutes(loopEnd, end,
                     endDir, orientedLoop, atStart: false, innerLoops, clearance,
-                    pipeDiameterMillimeters, pitch, leadOutward);
+                    pipeDiameterMillimeters, pitch, leadOutward, oppositeLeads);
                 foreach (List<Point2> fromStart in startRoutes)
                 foreach (List<Point2> toEnd in endRoutes)
                 {
@@ -653,7 +688,8 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     levelElevationFeet, layingHeightMillimeters, startConnection, endConnection,
                     start, startDir, end, endDir, angle, out coverage, out edgeExcess, out usedRectangularSpiral,
                     allowRectangularSpiral: Math.Abs(pitch - spacingMillimeters) > Epsilon,
-                    allowRectangularPitchAdjustment: false);
+                    allowRectangularPitchAdjustment: false, minimumClearance: minimumClearance,
+                    referencePitch: referencePitch);
             }
 
             if ((bestPath == null || CountCrossings(bestPath) > 0) && usedBoundaryPrefix &&
@@ -664,7 +700,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                     startConnection, endConnection, start, startDir, end, endDir, angle,
                             out coverage, out edgeExcess, out usedRectangularSpiral,
                             allowPerimeterSpiral, boundaryJoinOrder: 1,
-                            forceBoundaryLap);
+                            forceBoundaryLap, minimumClearance: minimumClearance, referencePitch: referencePitch);
             }
 
             if ((bestPath == null || CountCrossings(bestPath) > 0) && usedBoundaryPrefix)
@@ -672,11 +708,16 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
                     pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
                     startConnection, endConnection, start, startDir, end, endDir, angle,
-                    out coverage, out edgeExcess);
+                    out coverage, out edgeExcess, minimumClearance, referencePitch);
             }
 
             if ((bestPath == null || CountCrossings(bestPath) > 0) && usedPerimeterSpiral)
             {
+                if (canUseOrthogonalFallback)
+                    return RetryWithoutPerimeterPrefix(loops, spacingMillimeters, edgeOffsetMillimeters,
+                        pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
+                        startConnection, endConnection, start, startDir, end, endDir, angle,
+                        out coverage, out edgeExcess, minimumClearance, referencePitch);
                 return new List<XYZ>();
             }
 
@@ -771,6 +812,66 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                                  Math.Min(p.Y - minY, maxY - p.Y) <= tolerance);
         }
 
+        private static bool IsAxisAligned(IList<Point2> loop)
+        {
+            for (int i = 0; i < loop.Count; i++)
+            {
+                Point2 edge = loop[(i + 1) % loop.Count] - loop[i];
+                if (Math.Min(Math.Abs(edge.X), Math.Abs(edge.Y)) > 0.05)
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool HasConcaveCorner(IList<Point2> loop)
+        {
+            double winding = Math.Sign(SignedArea(loop));
+            for (int i = 0; i < loop.Count; i++)
+            {
+                Point2 incoming = loop[i] - loop[(i + loop.Count - 1) % loop.Count];
+                Point2 outgoing = loop[(i + 1) % loop.Count] - loop[i];
+                if (winding * Cross(incoming, outgoing) < -Epsilon)
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool HasLongRunPitch(IList<Point2> path, double requestedPitch)
+        {
+            double overlapLimit = 3 * requestedPitch;
+            double minimumPitch = requestedPitch * RectangularSpiral.MinimumPitchFactor - 0.5;
+            double parallelTolerance = Math.Sin(Math.PI / 360);
+            var runs = new List<(Point2 Start, Point2 End, Point2 Unit, double Length)>();
+            for (int i = 0; i + 1 < path.Count; i++)
+            {
+                Point2 start = path[i], end = path[i + 1];
+                double length = start.DistanceTo(end);
+                if (length >= overlapLimit)
+                    runs.Add((start, end, (end - start) / length, length));
+            }
+            for (int i = 0; i < runs.Count; i++)
+            {
+                var first = runs[i];
+                for (int j = i + 1; j < runs.Count; j++)
+                {
+                    var second = runs[j];
+                    if (Math.Abs(Cross(first.Unit, second.Unit)) > parallelTolerance)
+                        continue;
+                    double a = Dot(second.Start - first.Start, first.Unit);
+                    double b = Dot(second.End - first.Start, first.Unit);
+                    double from = Math.Max(0, Math.Min(a, b));
+                    double to = Math.Min(first.Length, Math.Max(a, b));
+                    if (to - from < overlapLimit)
+                        continue;
+                    double slope = Cross(first.Unit, second.End - second.Start) / (b - a);
+                    double intercept = Cross(first.Unit, second.Start - first.Start) - a * slope;
+                    if (Math.Min(Math.Abs(intercept + from * slope), Math.Abs(intercept + to * slope)) < minimumPitch)
+                        return false;
+                }
+            }
+            return true;
+        }
+
         private static bool TryRoundLoop(IList<Point2> source, IList<List<Point2>> loops,
             double clearance, double pipeDiameter, double pitch, out List<Point2> rounded)
         {
@@ -804,12 +905,12 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             double spacingMillimeters, double edgeOffsetMillimeters, double pipeDiameterMillimeters,
             double levelElevationFeet, double layingHeightMillimeters,
             XYZ startConnection, XYZ endConnection, Point2 start, Point2 startDir,
-            Point2 end, Point2 endDir, double angle, out double coverage, out double edgeExcess)
+            Point2 end, Point2 endDir, double angle, out double coverage, out double edgeExcess, double minimumClearance, double referencePitch)
         {
             return TryCreateCandidate(loops, spacingMillimeters, edgeOffsetMillimeters,
                 pipeDiameterMillimeters, levelElevationFeet, layingHeightMillimeters,
                 startConnection, endConnection, start, startDir, end, endDir, angle,
-                out coverage, out edgeExcess, out _, allowPerimeterSpiral: false);
+                out coverage, out edgeExcess, out _, allowPerimeterSpiral: false, minimumClearance: minimumClearance, referencePitch: referencePitch);
         }
 
         private static double GetConnectionOpeningLength(Point2 start, Point2 end,
@@ -884,7 +985,8 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
 
         private static List<List<Point2>> BuildConnectorRoutes(Point2 pipePoint, Point2 connection,
             Point2 connectionDirection, IList<Point2> coilPath, bool atStart, IList<List<Point2>> innerLoops,
-            double clearance, double pipeDiameter, double pitch, Point2 leadOutward = default)
+            double clearance, double pipeDiameter, double pitch, Point2 leadOutward = default,
+            bool oppositeLeads = false)
         {
             double minX = coilPath.Min(point => point.X);
             double maxX = coilPath.Max(point => point.X);
@@ -913,6 +1015,23 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             AddRoute(new[] { pipePoint, approach, connection });
             AddRoute(new[] { pipePoint, new Point2(pipePoint.X, approach.Y), approach, connection });
             AddRoute(new[] { pipePoint, new Point2(approach.X, pipePoint.Y), approach, connection });
+            if (leadOutward.Length <= Epsilon)
+            {
+                Point2 outward = Normalize(connectionDirection) * -1.0;
+                Point2 lateral = new(-outward.Y, outward.X);
+                double along = Dot(approach - pipePoint, outward);
+                double across = Dot(approach - pipePoint, lateral);
+                if (along > 2 * minimumGap && Math.Abs(across) > 2.54)
+                {
+                    // The two leads may have overlapping lateral intervals.
+                    // Stagger their bends in the available normal distance.
+                    foreach (double fraction in new[] { 0.25, 0.5, 0.75 })
+                    {
+                        Point2 bend = pipePoint + outward * (along * fraction);
+                        AddRoute(new[] { pipePoint, bend, bend + lateral * across, approach, connection });
+                    }
+                }
+            }
             for (int lane = 0; lane < 4; lane++)
             {
                 double margin = minimumGap + lane * laneStep;
@@ -934,6 +1053,30 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 .OrderBy(PolylineLength)
                 .Take(12)
                 .ToList();
+            if (oppositeLeads)
+            {
+                // The body still has one opening. The far connection can run
+                // around its outside using two corners, clear of the coil.
+                int seen = candidates.Count;
+                double margin = Math.Max(clearance, minimumGap);
+                double[] sidesX = { minX - margin, maxX + margin };
+                double[] sidesY = { minY - margin, maxY + margin };
+                if (Math.Abs(connectionDirection.X) >= Math.Abs(connectionDirection.Y))
+                {
+                    foreach (double x in sidesX)
+                    foreach (double y in sidesY)
+                        AddRoute(new[] { pipePoint, new Point2(x, pipePoint.Y), new Point2(x, y),
+                            new Point2(approach.X, y), approach, connection });
+                }
+                else
+                {
+                    foreach (double y in sidesY)
+                    foreach (double x in sidesX)
+                        AddRoute(new[] { pipePoint, new Point2(pipePoint.X, y), new Point2(x, y),
+                            new Point2(x, approach.Y), approach, connection });
+                }
+                orderedCandidates.AddRange(candidates.Skip(seen));
+            }
 
             void AddRoute(IEnumerable<Point2> points)
             {
@@ -989,7 +1132,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
 
         private static List<GridCell> BuildCells(IList<List<Point2>> loops,
             double nominalPitch, double pipeDiameter, double clearance, out double edgeExcess,
-            List<Point2> outerBandBoundary = null, double outerBandClearance = 0)
+            List<Point2> outerBandBoundary, double outerBandClearance, double minimumRunPitch)
         {
             edgeExcess = double.PositiveInfinity;
             double minX = loops.SelectMany(loop => loop).Min(point => point.X);
@@ -1049,6 +1192,24 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 {
                     cell.Up = up;
                     up.Down = cell;
+                }
+            }
+            // A narrow cell can be necessary to reach a nearby step. Connect
+            // such cells across their narrow side so they do not form a long
+            // double run with a gap smaller than the laying pitch.
+            foreach (GridCell cell in result)
+            {
+                if (cell.MaxY - cell.MinY < minimumRunPitch && cell.Right is { } right &&
+                    (cell.Up != null || cell.Down != null) && (right.Up != null || right.Down != null))
+                {
+                    cell.Right = null;
+                    right.Left = null;
+                }
+                if (cell.MaxX - cell.MinX < minimumRunPitch && cell.Up is { } up &&
+                    (cell.Right != null || cell.Left != null) && (up.Right != null || up.Left != null))
+                {
+                    cell.Up = null;
+                    up.Down = null;
                 }
             }
 
@@ -1212,6 +1373,10 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 if (++guard > 8 * component.Count + 10)
                     return null;
             }
+            // Cutting an interior tree link can produce a valid-looking loop
+            // that drops a whole branch. Keep every cell in the traced circuit.
+            if (nodes.Count != 4 * component.Count)
+                return null;
 
             var path = new List<Point2>();
             foreach (State node in nodes)
@@ -1274,7 +1439,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
         {
             // Clipper stores offsets at fixed 0.001 mm precision. Leave a small
             // numerical tolerance so an exactly-on-offset segment is not rejected.
-            double validatedClearance = Math.Max(0, clearance - 0.25);
+            double validatedClearance = Math.Max(0, clearance - SegmentGeometryToleranceMillimeters);
             double minimumDistanceSquared = validatedClearance * validatedClearance;
             foreach (List<Point2> loop in loops)
             {
@@ -1344,7 +1509,6 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             IList<Point2> path, double edgeOffset, double pipeDiameter, double pitch)
         {
             double maximumExtra = 0;
-            int missingWalls = 0;
             double minimumWallLength = Math.Max(300.0, pitch * 2.0);
             double parallelTolerance = Math.Sin(2.0 * Math.PI / 180.0);
             foreach (List<Point2> loop in loops)
@@ -1373,25 +1537,29 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
 
                     double firstProjection = Dot(pipeStart - wallStart, wallDirection);
                     double secondProjection = Dot(pipeEnd - wallStart, wallDirection);
-                    double overlap = Math.Min(wallLength, Math.Max(firstProjection, secondProjection)) -
-                        Math.Max(0, Math.Min(firstProjection, secondProjection));
-                    if (overlap < Math.Min(50.0, wallLength * 0.1))
+                    double overlapStart = Math.Max(0, Math.Min(firstProjection, secondProjection));
+                    double overlapEnd = Math.Min(wallLength, Math.Max(firstProjection, secondProjection));
+                    if (overlapEnd - overlapStart < Math.Min(50.0, wallLength * 0.1))
                         continue;
 
-                    double distance = Math.Abs(Cross(pipeStart - wallStart, wallDirection));
+                    // Measure the whole projected portion of this run. Sampling only
+                    // its first endpoint can accept a pipe that drifts away from the wall.
+                    double distanceAtStart = Cross(pipeStart - wallStart, wallDirection);
+                    double distanceSlope = Cross(pipeVector, wallDirection) /
+                        (secondProjection - firstProjection);
+                    double distance = Math.Max(
+                        Math.Abs(distanceAtStart + (overlapStart - firstProjection) * distanceSlope),
+                        Math.Abs(distanceAtStart + (overlapEnd - firstProjection) * distanceSlope));
                     nearestDistance = Math.Min(nearestDistance, distance);
                 }
 
                 if (!double.IsFinite(nearestDistance))
-                {
-                    missingWalls++;
-                    continue;
-                }
+                    return double.PositiveInfinity;
                 double wallGap = nearestDistance - pipeDiameter / 2.0;
                 maximumExtra = Math.Max(maximumExtra, wallGap - edgeOffset);
             }
 
-            return maximumExtra + missingWalls * Math.Max(10000.0, pitch * 100.0);
+            return maximumExtra;
         }
 
         private static double ComputeCoverageQuality(IList<List<Point2>> loops,
@@ -1406,6 +1574,8 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
             double maxY = loops.SelectMany(loop => loop).Max(point => point.Y);
             double sampleStep = Math.Max(50.0, Math.Min(100.0, pitch * 0.5));
             double maximumGap = 0;
+            var segmentBuckets = new SegmentBuckets<Point2>(path.Zip(path.Skip(1), (a, b) => (a, b)),
+                point => (point.X, point.Y), DistanceToSegmentSquared, pitch * 1.65);
 
             for (double x = minX + clearance; x <= maxX - clearance; x += sampleStep)
             for (double y = minY + clearance; y <= maxY - clearance; y += sampleStep)
@@ -1414,11 +1584,7 @@ namespace Underfloor_heating_generator.Infrastructure.Revit
                 if (!IsInside(loops, sample) || DistanceToBoundary(loops, sample) < clearance)
                     continue;
 
-                double nearestSquared = double.PositiveInfinity;
-                for (int i = 0; i + 1 < path.Count; i++)
-                    nearestSquared = Math.Min(nearestSquared,
-                        DistanceToSegmentSquared(sample, path[i], path[i + 1]));
-                maximumGap = Math.Max(maximumGap, Math.Sqrt(nearestSquared));
+                maximumGap = Math.Max(maximumGap, Math.Sqrt(segmentBuckets.NearestSquared(sample)));
             }
 
             return 1.0 / (1.0 + maximumGap);

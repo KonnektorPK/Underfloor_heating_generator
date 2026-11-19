@@ -74,6 +74,10 @@ namespace Underfloor_heating_generator.Application.Services
             if (request == null)
                 return WorkflowResult.Failure("Параметры построения не заданы.");
 
+            string limitError = request.Limits?.GetValidationError();
+            if (request.Limits == null || limitError != null)
+                return WorkflowResult.Failure(limitError ?? "Укажите ограничение по длине или по площади.");
+
             ElementId levelId = activeLevelProvider.GetActiveLevelId();
             if (levelId == null)
                 return WorkflowResult.Failure("Активный вид не связан с уровнем. Переключитесь на план этажа.");
@@ -82,21 +86,19 @@ namespace Underfloor_heating_generator.Application.Services
             Element pipeType = document.GetElement(request.PipeTypeId);
             Element systemType = document.GetElement(request.SystemTypeId);
             Pipe startPipe = document.GetElement(request.StartPipeId) as Pipe;
-            Pipe endPipe = document.GetElement(request.EndPipeId) as Pipe;
             if (area == null || pipeType == null || systemType == null)
                 return WorkflowResult.Failure("Выбранная область или тип трубы больше недоступны.");
-            if (startPipe == null || endPipe == null || startPipe.Id.Value == endPipe.Id.Value)
-                return WorkflowResult.Failure("Выберите две разные трубы начала и конца.");
+            if (startPipe == null)
+                return WorkflowResult.Failure("Выберите трубу, которая задаёт сторону выводов.");
             if (request.PipeSpacingMillimeters <= request.PipeDiameterMillimeters ||
                 request.PipeSpacingMillimeters <= 0 || request.WallOffsetMillimeters < 0 ||
                 request.PipeDiameterMillimeters <= 0)
                 return WorkflowResult.Failure("Проверьте диаметр, шаг и отступ: шаг должен быть больше диаметра.");
 
-            if (!PipeDiameterMatches(startPipe, request.PipeDiameterMillimeters) ||
-                !PipeDiameterMatches(endPipe, request.PipeDiameterMillimeters))
-                return WorkflowResult.Failure("Диаметр выбранных труб начала и конца должен совпадать с диаметром теплого пола.");
-            if (!PipeSystemMatches(startPipe, systemType.Id) || !PipeSystemMatches(endPipe, systemType.Id))
-                return WorkflowResult.Failure("Выберите тип системы, совпадающий с системой начальной и конечной труб.");
+            if (!PipeDiameterMatches(startPipe, request.PipeDiameterMillimeters))
+                return WorkflowResult.Failure("Диаметр выбранной трубы должен совпадать с диаметром тёплого пола.");
+            if (!PipeSystemMatches(startPipe, systemType.Id))
+                return WorkflowResult.Failure("Тип системы должен совпадать с системой выбранной трубы.");
 
             try
             {
@@ -109,24 +111,45 @@ namespace Underfloor_heating_generator.Application.Services
                     return WorkflowResult.Failure("Не удалось определить уровень активного вида.");
 
                 Connector startConnector = GetClosestFreeConnector(startPipe, boundaryLoops);
-                Connector endConnector = GetClosestFreeConnector(endPipe, boundaryLoops);
-                if (startConnector == null || endConnector == null)
-                    return WorkflowResult.Failure("У выбранных труб нет свободных концов для подключения.");
+                if (startConnector == null)
+                    return WorkflowResult.Failure("У выбранной трубы нет свободного конца.");
 
-                IList<XYZ> path = AreaPipeLayout.CreateSpiralPath(boundaryLoops,
+                IReadOnlyList<FloorCircuitLayout.Circuit> circuits = FloorCircuitLayout.Build(boundaryLoops,
+                    startConnector.Origin, GetPipeDirectionTowardConnector(startPipe, startConnector),
                     request.PipeSpacingMillimeters, request.WallOffsetMillimeters,
                     request.PipeDiameterMillimeters, level.Elevation, request.LayingHeightMillimeters,
-                    startConnector.Origin, GetPipeDirectionTowardConnector(startPipe, startConnector),
-                    endConnector.Origin, GetPipeDirectionTowardConnector(endPipe, endConnector));
-                if (path.Count < 3)
-                    return WorkflowResult.Failure("Не удалось уложить спираль с заданным шагом и отступом. Проверьте форму и размеры области.");
+                    request.Limits);
+                if (circuits.Count == 0)
+                    return WorkflowResult.Failure("Не удалось уложить все контуры с раздельными выводами. Проверьте лимит, границы области и направление выбранной трубы.");
 
-                if (!pipeTypeService.DrawPipesConnected(path, request.PipeDiameterMillimeters,
-                    request.LayingHeightMillimeters, pipeType.Id, levelId, systemType.Id,
-                    startPipe, endPipe))
-                    return WorkflowResult.Failure("Revit не смог создать или подключить трассу.");
+                using var group = new TransactionGroup(document, "Построение контуров тёплого пола");
+                group.Start();
+                try
+                {
+                    foreach (FloorCircuitLayout.Circuit circuit in circuits)
+                    {
+                        if (pipeTypeService.DrawPipesConnected(circuit.Points, request.PipeDiameterMillimeters,
+                                request.LayingHeightMillimeters, pipeType.Id, levelId, systemType.Id,
+                                circuit.ConnectsToSelectedPipe ? startPipe : null, null))
+                            continue;
+                        group.RollBack();
+                        return WorkflowResult.Failure("Revit не смог создать один из контуров.");
+                    }
+                    if (group.Assimilate() != TransactionStatus.Committed)
+                        return WorkflowResult.Failure("Revit не сохранил контуры.");
+                }
+                catch
+                {
+                    if (group.GetStatus() == TransactionStatus.Started)
+                        group.RollBack();
+                    throw;
+                }
 
-                return WorkflowResult.Success("Спираль теплого пола построена и подключена к выбранным трубам.");
+                double reserve = 2 * request.Limits.CollectorDistanceMeters.GetValueOrDefault();
+                string largest = request.Limits.MaximumAreaSquareMeters.HasValue
+                    ? $"{circuits.Max(circuit => circuit.AreaSquareMeters):0.##} м²"
+                    : $"{circuits.Max(circuit => circuit.LengthMeters) + reserve:0.##} м";
+                return WorkflowResult.Success($"Контуров построено: {circuits.Count}. Максимум на контур: {largest}.");
             }
             catch (Exception exception)
             {

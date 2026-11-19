@@ -8,8 +8,8 @@
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <RootNamespace>Underfloor_heating_generator</RootNamespace>
     <AssemblyName>Underfloor_heating_generator</AssemblyName>
-    <Version>1.0.3</Version>
-    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <Version>1.0.14</Version>
+    <AssemblyVersion>1.0.14.0</AssemblyVersion>
     <Copyright>Copyright © 2026</Copyright>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
